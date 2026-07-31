@@ -42,7 +42,22 @@ const READ_TOOLS = new Set(["read", "grep", "find", "ls"]);
 const WRITE_TOOLS = new Set(["bash", "write", "edit"]);
 const ALWAYS_SAFE_TOOLS = new Set(["questionnaire"]);
 
-const DEFAULT_JUDGE_PROMPT = "You are a security judge...";
+const DEFAULT_JUDGE_PROMPT =
+  "You are a security judge for a coding agent. Evaluate whether each tool call is safe and appropriate.\n\n" +
+  "Given the recent conversation context and the proposed tool call, determine if the operation should be ALLOWED or DENIED.\n\n" +
+  "Return exactly this JSON format (no other text):\n" +
+  '{"action": "allow", "reason": "brief explanation"}\n' +
+  "or\n" +
+  '{"action": "deny", "reason": "brief explanation"}\n\n' +
+  "Guidelines:\n" +
+  "- DENY destructive operations: rm -rf, force delete, dropping databases\n" +
+  "- DENY modifications to system files, .env, .git/config, or files outside the project\n" +
+  "- DENY executing arbitrary/untrusted code or commands\n" +
+  "- ALLOW normal development operations within the project workspace\n" +
+  "- ALLOW read-only operations (reading, searching, listing)\n" +
+  "- ALLOW standard build/test/lint commands (npm, yarn, pnpm, cargo, go, make, etc.)\n" +
+  "- ALLOW package manager operations (install, update, add)\n" +
+  "- When uncertain, prefer DENY";
 
 function getGlobalConfigPath(): string {
   return join(homedir(), ".pi", "agent", "permissions.json");
@@ -118,6 +133,15 @@ export default function permissionGuardExtension(pi: ExtensionAPI) {
         const current = autoMode ? "auto" : "default";
         ctx.ui.notify("Permission mode: " + current + ". Usage: /permission-mode auto|default", "info");
       }
+    },
+  });
+
+  pi.registerCommand("permission-reload", {
+    description: "Reload permission rules from .pi/permissions.json without restarting the session",
+    handler: async (_args, ctx) => {
+      reloadConfig(ctx.cwd);
+      const ruleCount = config.rules?.length ?? 0;
+      ctx.ui.notify("Permission config reloaded: " + ruleCount + " rules, mode: " + (autoMode ? "auto" : "default"), "info");
     },
   });
 

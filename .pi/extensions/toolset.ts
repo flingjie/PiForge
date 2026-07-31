@@ -11,11 +11,24 @@ import type { ExtensionAPI, ToolDefinition } from "@mariozechner/pi-coding-agent
 import { Type } from "typebox";
 import { spawn } from "node:child_process";
 
+const PRIVATE_IP_RANGES = [
+  /^127\./, /^10\./, /^172\.(1[6-9]|2[0-9]|3[01])\./, /^192\.168\./,
+  /^169\.254\./, /^0\./, /^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./,
+  /^fc00:/, /^fd00:/, /^fe80:/, /^::1$/, /^::$/, /^0:0:0:0:0:0:0:1$/,
+];
+
+function isPrivateHost(hostname: string): boolean {
+  for (const pattern of PRIVATE_IP_RANGES) {
+    if (pattern.test(hostname)) return true;
+  }
+  return hostname === "localhost" || hostname === "metadata.google.internal";
+}
+
 function execJqCommand(filter: string, input?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("jq", [filter], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, PATH: "/opt/homebrew/bin:" + (process.env.PATH || "") },
+      env: process.env,
     });
     let stdout = "";
     let stderr = "";
@@ -58,40 +71,82 @@ const webFetchTool: ToolDefinition = {
     "Fetch content from a URL via HTTP GET. Returns the response body as text. " +
     "Use for reading documentation, checking API responses, or fetching raw data. " +
     "Only fetches public URLs. For complex HTML pages, consider reading a saved copy instead. " +
-    "Timeout: 15 seconds. Max response size: 500KB.",
+    "Timeout: 15 seconds. Max response size: 500KB. Blocks private/internal IPs.",
   parameters: Type.Object({
     url: Type.String({ description: "URL to fetch (must start with http:// or https://)" }),
     headers: Type.Optional(Type.Record(Type.String(), Type.String(), { description: "Optional HTTP headers" })),
   }),
   execute: async (_id, params, signal) => {
-    // Validate URL
-    if (!params.url.startsWith("http://") && !params.url.startsWith("https://")) {
+    let urlStr = params.url;
+    if (!urlStr.startsWith("http://") && !urlStr.startsWith("https://")) {
       return {
         content: [{ type: "text", text: "Error: URL must start with http:// or https://" }],
         isError: true,
       };
     }
 
+    // SSRF guard: check host before fetching
+    try {
+      const parsed = new URL(urlStr);
+      if (isPrivateHost(parsed.hostname)) {
+        return {
+          content: [{ type: "text", text: "Error: Requests to private/internal IPs are blocked." }],
+          isError: true,
+        };
+      }
+    } catch {
+      return {
+        content: [{ type: "text", text: "Error: Invalid URL format." }],
+        isError: true,
+      };
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15_000);
-    if (signal) signal.addEventListener("abort", () => controller.abort());
+    const onAbort = () => controller.abort();
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
 
     try {
-      const response = await fetch(params.url, {
-        method: "GET",
-        headers: {
-          "User-Agent": "PiForge/1.0",
-          Accept: "text/plain,text/html,application/json,*/*",
-          ...params.headers,
-        },
-        signal: controller.signal,
-        redirect: "follow",
-      });
+      // Manual redirect with SSRF check on each hop
+      let response: Response | null = null;
+      for (let hop = 0; hop < 5; hop++) {
+        response = await fetch(urlStr, {
+          method: "GET",
+          headers: {
+            "User-Agent": "PiForge/1.0",
+            Accept: "text/plain,text/html,application/json,*/*",
+            ...params.headers,
+          },
+          signal: controller.signal,
+          redirect: "manual",
+        });
 
-      const maxSize = 500 * 1024; // 500KB
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get("location");
+          if (!location) break;
+          const redirectUrl = new URL(location, urlStr);
+          if (isPrivateHost(redirectUrl.hostname)) {
+            return {
+              content: [{ type: "text", text: "Error: Redirect target is a private/internal IP — blocked." }],
+              isError: true,
+            };
+          }
+          urlStr = redirectUrl.href;
+          continue;
+        }
+        break;
+      }
+
+      if (!response) {
+        return {
+          content: [{ type: "text", text: "Error: Too many redirects." }],
+          isError: true,
+        };
+      }
+
+      const maxSize = 500 * 1024;
       const contentType = response.headers.get("content-type") || "";
 
-      // Read up to maxSize
       const reader = response.body?.getReader();
       if (!reader) {
         return {
@@ -100,6 +155,8 @@ const webFetchTool: ToolDefinition = {
         };
       }
 
+      // Single TextDecoder for correct multi-byte UTF-8 handling across chunks
+      const decoder = new TextDecoder();
       let body = "";
       let total = 0;
       while (true) {
@@ -107,19 +164,17 @@ const webFetchTool: ToolDefinition = {
         if (done) break;
         total += value.length;
         if (total > maxSize) {
-          body += new TextDecoder().decode(value.slice(0, maxSize - (total - value.length)));
+          const remaining = maxSize - (total - value.length);
+          body += decoder.decode(value.slice(0, remaining), { stream: false });
           body += "\n\n[Response truncated at 500KB]";
           break;
         }
-        body += new TextDecoder().decode(value);
+        body += decoder.decode(value, { stream: true });
       }
 
-      // For JSON responses, pretty-print
       let displayBody = body;
       if (contentType.includes("json")) {
-        try {
-          displayBody = JSON.stringify(JSON.parse(body), null, 2);
-        } catch {}
+        try { displayBody = JSON.stringify(JSON.parse(body), null, 2); } catch {}
       }
 
       return {
@@ -134,6 +189,7 @@ const webFetchTool: ToolDefinition = {
       };
     } finally {
       clearTimeout(timeout);
+      if (signal) signal.removeEventListener("abort", onAbort);
     }
   },
 };
@@ -145,7 +201,7 @@ const webSearchTool: ToolDefinition = {
     "Search the web via Tavily API. Returns titles, URLs, and content snippets. " +
     "Use for finding current information, documentation, or answers that require " +
     "up-to-date web data. Supports optional search_depth (basic/advanced) and " +
-    "max_results (1-10, default 5). Include country/countries for region-specific results.",
+    "max_results (1-10, default 5).",
   parameters: Type.Object({
     query: Type.String({ description: "Search query" }),
     max_results: Type.Optional(Type.Number({ description: "Max results 1-10 (default 5)" })),
@@ -162,7 +218,8 @@ const webSearchTool: ToolDefinition = {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20_000);
-    if (signal) signal.addEventListener("abort", () => controller.abort());
+    const onAbort = () => controller.abort();
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
 
     try {
       const body = JSON.stringify({
@@ -189,7 +246,7 @@ const webSearchTool: ToolDefinition = {
 
       const data = (await response.json()) as {
         answer?: string;
-        results: Array<{ title: string; url: string; content: string; score: number }>;
+        results: Array<{ title: string; url: string; content?: string; score: number }>;
       };
 
       const lines: string[] = [];
@@ -197,9 +254,9 @@ const webSearchTool: ToolDefinition = {
         lines.push(data.answer, "");
       }
       for (const r of data.results || []) {
-        lines.push(`## ${r.title}`);
-        lines.push(`URL: ${r.url}`);
-        lines.push(r.content.slice(0, 500));
+        lines.push("## " + r.title);
+        lines.push("URL: " + r.url);
+        if (r.content) lines.push(r.content.slice(0, 500));
         lines.push("");
       }
 
@@ -209,11 +266,12 @@ const webSearchTool: ToolDefinition = {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return {
-        content: [{ type: "text", text: `Search error: ${message}` }],
+        content: [{ type: "text", text: "Search error: " + message }],
         isError: true,
       };
     } finally {
       clearTimeout(timeout);
+      if (signal) signal.removeEventListener("abort", onAbort);
     }
   },
 };

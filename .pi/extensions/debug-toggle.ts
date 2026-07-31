@@ -59,6 +59,8 @@ export default function debugToggleExtension(pi: ExtensionAPI) {
       debugEnabled = true;
       persistState();
     }
+    // Emit current state so late-registering listeners get initial value
+    pi.events.emit("debug-changed", { debugEnabled });
   });
 
   pi.on("session_tree", async (_event, ctx) => {
