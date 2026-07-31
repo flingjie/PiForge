@@ -114,24 +114,75 @@ Write a plan when ANY of these apply:
 
 ### How to plan
 
-1. **Enter plan mode** — use `EnterPlanMode` to explore the codebase and design the approach
-2. **Resolve ambiguity** — for complex design decisions, use grilling (`/mattpocock-skills:grilling`) to walk the decision tree one question at a time. Each answer constrains the next question. Don't jump ahead.
+1. **Resolve ambiguity** — for complex design decisions, use grilling (`/mattpocock-skills:grilling`) to walk the decision tree one question at a time. Each answer constrains the next question.
+2. **Enter plan mode** — use `EnterPlanMode` to explore the codebase and design the approach.
 3. **Write the plan** — save to `.claude/plans/<slug>.md`. The plan file must include:
    - **Context** — why this change, what problem it solves
-   - **Design decisions** — key choices made and their rationale
-   - **Implementation steps** — concrete, bite-sized, in dependency order
-   - **Verification** — how to test end-to-end (specific commands)
-4. **Get approval** — use `ExitPlanMode` to present the plan. Don't start coding until approved.
+   - **Design Decisions** — key choices and their rationale (grilling output)
+   - **Execution Graph** — see format below. Each node has a unique integer ID so it can be referenced during review and adjustment.
+   - **Out of Scope** — what's explicitly NOT included
+   - **Verification** — end-to-end test command
+4. **Get approval** — use `ExitPlanMode` to present the graph. The user can reorder, merge, or split nodes by ID before approving.
+
+### Execution Graph Format
+
+Every plan must include a graph of implementation steps. Two parts: a node table and a layered dependency diagram.
+
+**Node Table** — each row is one step:
+
+```
+| ID | Name          | Files              | Verify          |
+|----|---------------|--------------------|-----------------|
+| 1  | monorepo 骨架 | package.json, tsconfig | npm install |
+| 2  | 核心类型      | graph/types.ts     | tsc --noEmit    |
+```
+
+- **ID**: unique integer. Used for cross-referencing and adjustment ("move 4 before 3").
+- **Name**: 2-4 word label.
+- **Files**: concrete paths to create or modify.
+- **Verify**: the command that proves this step is done (typecheck, test, build).
+
+**Dependency Diagram** — layered ASCII layout. Nodes on the same line have no dependencies on each other and can run concurrently. A node on a lower line depends on all nodes connected from the line above.
+
+```
+[1]
+
+[2]
+
+[3]  [4]  [5]  [6]
+
+[7]       [8]
+```
+
+**Concurrent Groups** — derived from the diagram. Each group runs in parallel; groups run sequentially.
+
+```
+G1: [1]
+G2: [2]
+G3: [3, 4, 5, 6]      ← no mutual dependencies, run together
+G4: [7, 8]
+```
+
+**Rules for decomposing into nodes:**
+- Each node should touch one or a few closely-related files
+- Maximize concurrency: if two steps share no dependencies, put them on the same layer
+- A node should take roughly 5-30 minutes — split anything larger
+- Every node has a verify command — no "just write code" steps
 
 ### What a good plan looks like
 
-- References existing code patterns and files to reuse
-- Names concrete files to create or modify
-- Each step is independently verifiable
-- Covers both the happy path and edge cases (error handling, degraded modes, cycle limits)
+- The dependency graph shows clear concurrent groups — no bottlenecks where 1 node blocks 5 others
+- Each node is independently verifiable
+- Covers both the happy path and edge cases
 - Scopes what's out of scope as clearly as what's in
 
-For larger features, pair the plan with a grilling session: the plan captures the *what* and *how*; grilling resolves the *why* for each design choice.
+### Plan → Execution
+
+After approval:
+1. Create one task per concurrent group (G1→task, G2→task, ...)
+2. Within each group, nodes run in parallel (spawn subagents or fan out writes)
+3. Each node's verify command must pass before marking the group done
+4. If a node fails, fix it before moving to the next group
 
 ## Git Conventions
 
