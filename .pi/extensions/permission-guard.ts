@@ -76,8 +76,13 @@ function loadConfig(cwd: string): PermissionConfig {
 export default function permissionGuardExtension(pi: ExtensionAPI) {
   let config: PermissionConfig = {};
   let autoMode = false;
+  let debugMode = false;
   const judgeCache = new Map<string, { action: string; reason: string }>();
   let cwd = "";
+
+  function log(...args: unknown[]) {
+    if (debugMode) console.error("[permission-guard]", ...args);
+  }
 
   function reloadConfig(ctxCwd?: string) {
     cwd = ctxCwd ?? process.cwd();
@@ -130,6 +135,9 @@ export default function permissionGuardExtension(pi: ExtensionAPI) {
     }
     if (pi.getFlag("auto") === true) {
       autoMode = true;
+    }
+    if (pi.getFlag("debug") === true) {
+      debugMode = true;
     }
   });
 
@@ -383,6 +391,14 @@ export default function permissionGuardExtension(pi: ExtensionAPI) {
     return { action: "deny", reason: "Unparseable judge response" };
   }
 
+  // Listen for runtime debug toggle changes
+  pi.events.on("debug-changed", (payload: unknown) => {
+    const data = payload as { debugEnabled?: boolean } | undefined;
+    if (data?.debugEnabled !== undefined) {
+      debugMode = data.debugEnabled;
+    }
+  });
+
   pi.on("tool_call", async (event: ToolCallEvent, ctx) => {
     if (!autoMode && (!config.rules || config.rules.length === 0)) {
       return undefined;
@@ -391,28 +407,37 @@ export default function permissionGuardExtension(pi: ExtensionAPI) {
     const toolName = event.toolName;
     const input = event.input as Record<string, unknown>;
 
+    log("intercept", toolName, JSON.stringify(input).slice(0, 200));
+
     // 1. Check rules (first-match-wins)
     if (config.rules && config.rules.length > 0) {
       for (const rule of config.rules) {
         if (ruleApplies(rule, toolName, input)) {
+          log("rule matched:", rule.action, rule.tool || "*", rule.command || rule.path || rule.pattern || "");
           if (rule.action === "allow") return undefined;
           return { block: true, reason: "Blocked by rule: " + rule.action + " " + toolName };
         }
       }
+      log("no rule matched, checked", config.rules.length, "rules");
     }
 
-    if (!autoMode) return undefined;
+    if (!autoMode) {
+      log("not in auto mode, allowing");
+      return undefined;
+    }
 
     // 2. Check cache
     const key = cacheKey(toolName, input);
     const cached = judgeCache.get(key);
     if (cached) {
+      log("cache", cached.action, key);
       if (cached.action === "allow") return undefined;
       return { block: true, reason: "Denied by judge (cached): " + cached.reason };
     }
 
     // 3. Call judge LLM
     try {
+      log("calling judge for", toolName);
       // Default to anthropic/haiku via the proxy's Anthropic Messages API,
       // which is the most reliable path. Overridable in permissions.json.
       const judgeModel = config.judge?.model ?? "claude-haiku-4-5";
@@ -441,10 +466,13 @@ export default function permissionGuardExtension(pi: ExtensionAPI) {
 
       judgeCache.set(key, result);
 
+      log("judge result:", result.action, result.reason);
+
       if (result.action === "allow") return undefined;
       return { block: true, reason: "Denied by judge: " + result.reason };
     } catch (err) {
       const fallback = fallbackDecision(toolName);
+      log("judge error:", err instanceof Error ? err.message : String(err), "fallback:", fallback.block ? "block" : "allow");
       if (fallback.block) {
         const errMsg = err instanceof Error ? err.message : String(err);
         return { block: true, reason: fallback.reason + " (judge error: " + errMsg.slice(0, 80) + ")" };
