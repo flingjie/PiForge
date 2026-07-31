@@ -1,0 +1,28 @@
+{
+  "mode": "auto",
+  "judge": {
+    "model": "claude-haiku-4-5",
+    "contextTokens": 2000
+  },
+  "fallback": "deny_writes",
+  "rules": [
+    { "action": "allow", "tool": "read", "path": "./**" },
+    { "action": "allow", "tool": "read", "path": "./src/**" },
+    { "action": "allow", "tool": "bash", "command": "git status*" },
+    { "action": "allow", "tool": "bash", "command": "git diff*" },
+    { "action": "allow", "tool": "bash", "command": "git log*" },
+    { "action": "allow", "tool": "bash", "command": "git branch*" },
+    { "action": "allow", "tool": "bash", "command": "ls*" },
+    { "action": "allow", "tool": "bash", "command": "cat*" },
+    { "action": "allow", "tool": "bash", "command": "head*" },
+    { "action": "allow", "tool": "bash", "command": "tail*" },
+    { "action": "allow", "tool": "bash", "command": "grep*" },
+    { "action": "allow", "tool": "bash", "command": "find*" },
+    { "action": "allow", "tool": "bash", "command": "node*" },
+    { "action": "allow", "tool": "bash", "command": "npm run*" },
+    { "action": "allow", "tool": "bash", "command": "npx*" },
+    { "action": "allow", "tool": "grep" },
+    { "action": "allow", "tool": "find" },
+    { "action": "allow", "tool": "ls" }
+  ]
+}
