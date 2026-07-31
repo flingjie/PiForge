@@ -43,7 +43,7 @@ const ERROR_PATTERNS = [
   },
   {
     name: "NETWORK",
-    test: (text: string) => /fetch|ECONNREFUSED|ENOTFOUND/.test(text),
+    test: (text: string) => /\bfetch\b|ECONNREFUSED|ENOTFOUND/.test(text),
     format: (text: string) => {
       const firstLine = text.trim().split("\n")[0].slice(0, 100);
       return {
@@ -85,6 +85,23 @@ function truncate(text: string, maxLen: number): string {
   return `${text.slice(0, maxLen)}...`;
 }
 
+/**
+ * Extract a plain-text string from tool result content.
+ * Handles both string content and content-block arrays (e.g. [{type: "text", text: "..."}]).
+ */
+function extractText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((c): c is { type: string; text: string } =>
+        typeof c === "object" && c !== null && "type" in c && "text" in c && c.type === "text",
+      )
+      .map((c) => c.text)
+      .join("\n");
+  }
+  return "";
+}
+
 function detectError(text: string, toolName: string) {
   for (const pattern of ERROR_PATTERNS) {
     if (pattern.test(text)) {
@@ -112,7 +129,7 @@ export default function structuredFeedbackExtension(pi: ExtensionAPI) {
     try {
       if (!event.isError) return;
 
-      const rawText = String(event.content ?? "");
+      const rawText = extractText(event.content);
       const toolName = String(event.toolName ?? "unknown_tool");
       const result = detectError(rawText, toolName);
 

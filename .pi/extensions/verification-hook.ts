@@ -17,7 +17,6 @@
 
 import type { ExtensionAPI, ToolResultEvent } from "@mariozechner/pi-coding-agent";
 import { spawn } from "node:child_process";
-import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -93,13 +92,6 @@ function truncate(text: string, maxLen: number): string {
   return text.slice(0, maxLen) + "...(truncated)";
 }
 
-/** Extract a readable file path from the tool input. */
-function getFilePath(input: Record<string, unknown>): string | null {
-  const raw = input.path;
-  if (typeof raw === "string" && raw.length > 0) return raw;
-  return null;
-}
-
 // ---------------------------------------------------------------------------
 // Verification functions
 // ---------------------------------------------------------------------------
@@ -121,7 +113,7 @@ async function verifyTypeScript(cwd: string): Promise<{ ok: boolean; evidence: s
 async function verifyJson(filePath: string): Promise<{ ok: boolean; evidence: string }> {
   const { stderr, code } = await execWithTimeout(
     "python3",
-    ["-c", `import json; json.load(open('${filePath.replace(/'/g, "\\'")}'))`],
+    ["-c", `import json; json.load(open(${JSON.stringify(filePath)}))`],
     process.cwd(),
     VERIFY_TIMEOUT_MS,
   );
@@ -153,7 +145,8 @@ export default function verificationHookExtension(pi: ExtensionAPI) {
 
       // ---- write / edit ----
       if (toolName === "write" || toolName === "edit") {
-        const filePath = getFilePath(event.input);
+        const raw = event.input.path;
+        const filePath = typeof raw === "string" && raw.length > 0 ? raw : null;
         if (!filePath) return;
 
         if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) {
@@ -180,10 +173,12 @@ export default function verificationHookExtension(pi: ExtensionAPI) {
       if (toolName === "bash") {
         if (!event.isError) return;
         const command = typeof event.input.command === "string" ? event.input.command : "(unknown)";
-        const outputText = event.content
-          .filter((c): c is { type: "text"; text: string } => c.type === "text")
-          .map((c) => c.text)
-          .join("\n");
+        const outputText = Array.isArray(event.content)
+          ? event.content
+              .filter((c): c is { type: "text"; text: string } => c.type === "text")
+              .map((c) => c.text)
+              .join("\n")
+          : String(event.content ?? "");
         what = `Bash command exited with non-zero code: \`${command}\``;
         why = "The command returned an error exit code.";
         suggestedFix = "Review the error output. Check for syntax errors, missing files, or incorrect arguments.";

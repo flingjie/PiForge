@@ -37,33 +37,14 @@ const CONTINUE_ADD_TURNS = 25;
 // ---------------------------------------------------------------------------
 
 function getFilePath(input: Record<string, unknown>): string | null {
-  if (typeof input.file_path === "string" && input.file_path.length > 0) {
-    return input.file_path;
+  if (typeof input.path === "string" && input.path.length > 0) {
+    return input.path;
   }
   return null;
 }
 
 function persist(pi: ExtensionAPI, state: LoopGuardState): void {
   pi.appendEntry<LoopGuardState>(CUSTOM_TYPE, { ...state });
-}
-
-function parseLimitArg(args: string | undefined): number | null {
-  if (!args) return null;
-  const trimmed = args.trim();
-  const num = parseInt(trimmed, 10);
-  if (isNaN(num) || num <= 0) return null;
-  return num;
-}
-
-function parseIncreaseArg(args: string | undefined): number | null {
-  if (!args) return null;
-  const trimmed = args.trim().toLowerCase();
-  // Support "increase to N" or "increase N"
-  const match = trimmed.match(/(?:increase\s+(?:to\s+)?)?(\d+)/);
-  if (!match) return null;
-  const num = parseInt(match[1], 10);
-  if (isNaN(num) || num <= 0) return null;
-  return num;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,7 +130,15 @@ export default function loopGuardExtension(pi: ExtensionAPI) {
         return;
       }
 
-      const increaseNum = parseIncreaseArg(args);
+      const increaseNum = (() => {
+        if (!args) return null;
+        const t = args.trim().toLowerCase();
+        const m = t.match(/(?:increase\s+(?:to\s+)?)?(\d+)/);
+        if (!m) return null;
+        const n = parseInt(m[1], 10);
+        if (isNaN(n) || n <= 0) return null;
+        return n;
+      })();
       if (increaseNum !== null) {
         if (!turnLimitReached) {
           // Allow changing limit even when limit not reached
@@ -166,7 +155,13 @@ export default function loopGuardExtension(pi: ExtensionAPI) {
         return;
       }
 
-      const num = parseLimitArg(args);
+      const num = (() => {
+        if (!args) return null;
+        const t = args.trim();
+        const n = parseInt(t, 10);
+        if (isNaN(n) || n <= 0) return null;
+        return n;
+      })();
       if (num !== null) {
         state.maxTurns = num;
         if (state.turnCount >= state.maxTurns) {
