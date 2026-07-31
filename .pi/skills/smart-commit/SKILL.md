@@ -13,13 +13,19 @@ description: >
 
 # Smart Commit Skill
 
-Auto-classify changes → confirm → commit → push.
+Auto-classify → low review → confirm → commit → push.
 
 ## Workflow (mandatory order)
 
 1. **Scan** — run `git status`, read `.gitignore`
 2. **Classify** — sort every changed file into commit / skip / ask
-3. **Present** — show the user exactly what will be committed
+3. **Low Review** — quick sanity check of the diff for common issues
+4. **Present** — show classified files + review findings + commit message
+5. **Confirm** — wait for user approval
+6. **Commit** — stage explicit paths, commit with message
+7. **Push** — push to origin
+
+Never skip the confirmation step. Never use `git add -A` or `git add .`.
 4. **Confirm** — wait for user approval
 5. **Commit** — stage explicit paths, generate message, commit
 6. **Push** — push to origin
@@ -80,7 +86,51 @@ Files that need human judgment:
 | `package-lock.json` | Large diff, may be intentional or noise |
 | `*.lock` files | Lockfile changes |
 
-## Step 3: Present
+## Step 3: Low Review
+
+Before presenting the commit, run a quick sanity check of the diff. This is NOT a full code review — just surface anything obviously wrong in < 10 seconds of scanning. Run `git diff --cached` (or `git diff` for unstaged). Check:
+
+### Review Checks
+
+| Check | What to look for | Severity |
+|-------|-----------------|----------|
+| **Debug artifacts** | `console.log`, `console.error`, `debugger`, `print(`, `TODO`, `FIXME`, `HACK` left in code | ⚠️ warning |
+| **Secrets/sensitive** | API keys, tokens, passwords, hardcoded credentials in plain text | 🔴 block |
+| **Large files** | Any single file >500 lines changed — flag for review | ⚠️ warning |
+| **Orphan files** | New files without tests if tests/ dir exists and file is source code | 💡 suggestion |
+| **Empty files** | Any committed file that's 0 bytes | ⚠️ warning |
+| **Incomplete changes** | Files that reference symbols/functions that don't exist in the commit | 💡 suggestion |
+| **Commit message quality** | Message too vague ("fix", "update", "wip"), missing scope, too long (>72 chars subject) | 💡 suggestion |
+| **Mixed concerns** | Single commit touches unrelated areas (e.g., skills/ + extensions/ + references/ in one commit) | 💡 suggestion |
+| **Binary files** | Images, compiled binaries, .zip files | ⚠️ warning |
+
+### Review output format
+
+```
+## Low Review
+
+🔴 **BLOCK**: `permission-guard.ts:82` — hardcoded API key found: `sk-abc123...`
+⚠️ **Warning**: `toolset.ts:45` — `console.error` debug logging left in
+⚠️ **Warning**: `permission-guard.ts` — 245 lines changed, consider splitting
+💡 **Suggestion**: `toolset.ts` (new) — no test file found (tests/ exists)
+💡 **Suggestion**: Commit message subject is 78 chars — exceeds 72 char limit
+```
+
+### Review action rules
+
+| Severity | Action |
+|----------|--------|
+| 🔴 **block** | Don't proceed. Tell user: "Found potential secret — commit blocked. Fix before committing." |
+| ⚠️ **warning** | Flag but don't block. "Found [N] warnings — review them, or say 'ignore' to proceed." |
+| 💡 **suggestion** | Flag briefly. User can ignore without comment. |
+
+### Review Thresholds
+
+If the diff is trivial (< 20 lines, < 3 files, no new files): skip the review. Say "Trivial change, skipping low review." and proceed directly to confirmation.
+
+If ≥ 5 warnings: pause and ask "Found [N] warnings. Review them, or type 'commit' to proceed anyway?"
+
+## Step 4: Present
 
 Show the classification results clearly:
 
@@ -123,7 +173,7 @@ Examples:
 - `feat(extensions): add permission guard with auto mode and LLM judge`
 - `docs(references): add reflection protocol reference`
 
-## Step 4: Confirm
+## Step 5: Confirm
 
 Show the commit message and ask:
 
@@ -134,7 +184,7 @@ Show the commit message and ask:
 
 Wait for explicit confirmation. Do NOT proceed on silence.
 
-## Step 5: Commit
+## Step 6: Commit
 
 Stage explicit paths only:
 
@@ -145,7 +195,7 @@ git commit -m "feat(skills): add smart-commit skill"
 
 Verify the commit succeeded. Show the SHA.
 
-## Step 6: Push
+## Step 7: Push
 
 ```bash
 git push origin main
