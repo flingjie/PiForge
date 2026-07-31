@@ -1,6 +1,13 @@
 ---
 name: pi-permission-config
-description: Read and configure Pi's project-level permission rules (.pi/permissions.json). Use when the user asks about Pi permissions, wants to view/edit permission rules, block/allow specific tools or commands, toggle auto mode, configure the judge LLM, or set up security policies for the coding agent. Triggers on: "pi permission", "permission config", "权限", "permission rule", "allow/deny tool", "auto mode", "judge model", "安全策略", "block bash", "protect file", and any request involving Pi tool access control.
+description: >
+  Read and configure Pi's project-level permission rules (.pi/permissions.json).
+  Use when the user asks about Pi permissions, wants to view/edit permission rules,
+  block/allow specific tools or commands, toggle auto mode, configure the judge LLM,
+  or set up security policies for the coding agent.
+  Triggers on -- "pi permission", "permission config", "权限", "permission rule",
+  "allow/deny tool", "auto mode", "judge model", "安全策略", "block bash",
+  "protect file", and any request involving Pi tool access control.
 ---
 
 # Pi Permission Config
