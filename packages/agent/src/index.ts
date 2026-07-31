@@ -1,25 +1,17 @@
-// Graph engine (generic, not reflection-specific).
+// Graph engine.
 export type {
   GraphNode,
   GraphState,
   GraphConfig,
-  Edge,
-  RouteCondition,
-  RouteResult,
   NodeInput,
   NodeResult,
   Checkpoint,
-  ToolSet,
 } from "./graph/types.js";
 export { DEFAULT_GRAPH_CONFIG } from "./graph/types.js";
 export { runGraph } from "./graph/runner.js";
 export { parallel } from "./graph/concurrency.js";
 export { saveCheckpoint, restoreCheckpoint, shouldCheckpoint } from "./graph/checkpoint.js";
 export { withRetry, RetryExhaustedError } from "./graph/retry.js";
-
-// Tool registry.
-export { ToolRegistry } from "./tools/registry.js";
-export type { RegisteredTool, ParameterSchema, ToolPermissions } from "./tools/types.js";
 
 // Reflection protocol.
 export type {
@@ -35,9 +27,9 @@ export type {
   GateResult,
 } from "./reflection/state.js";
 export { createReflectionState } from "./reflection/state.js";
-export { buildReflectionGraph, runReflectionGraph } from "./reflection/graph.js";
+export { runReflectionGraph } from "./reflection/graph.js";
 export { checkSignalDensity, evaluateGate } from "./reflection/validation-gate.js";
-export { reflectionTools } from "./reflection/tools.js";
+export { writeReflection, updateDNA } from "./reflection/tools.js";
 
 // Reflection nodes.
 export { valueLensNode } from "./reflection/nodes/value-lens.js";

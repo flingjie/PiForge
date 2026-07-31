@@ -14,7 +14,6 @@ interface TestState extends GraphState {
 function makeState(): TestState {
   return {
     checkpoints: [],
-    routeLog: [],
     nodeResults: {},
     status: "running",
     counter: 42,

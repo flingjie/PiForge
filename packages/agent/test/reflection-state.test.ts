@@ -5,7 +5,6 @@ describe("createReflectionState", () => {
   it("returns a state with all required fields defaulted", () => {
     const state = createReflectionState();
     expect(state.checkpoints).toEqual([]);
-    expect(state.routeLog).toEqual([]);
     expect(state.nodeResults).toEqual({});
     expect(state.status).toBe("running");
     expect(state.userDNA).toEqual({});

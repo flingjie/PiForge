@@ -114,7 +114,6 @@ export interface ReflectionState extends GraphState {
 export function createReflectionState(overrides: Partial<ReflectionState> = {}): ReflectionState {
   return {
     checkpoints: [],
-    routeLog: [],
     nodeResults: {},
     status: "running",
     userDNA: {},

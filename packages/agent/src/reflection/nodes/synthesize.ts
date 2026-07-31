@@ -1,25 +1,15 @@
 import type { GraphNode, NodeInput } from "../../graph/types.js";
 import type { ReflectionState, SynthesizeOutput, ProposedDiff } from "../state.js";
+import type { AdversaryOutput } from "../state.js";
+import { writeReflection, updateDNA } from "../tools.js";
 
-/**
- * Synthesize — combines adversary verdicts into proposed user DNA diffs
- * and action experiments. Presents them for user approval (user gate).
- *
- * Runs in three modes depending on gate result:
- * - Normal: 3/3 or 2/3 → full synthesize
- * - Caveat: 1/3 → synthesize with heavy caveat, report degraded lenses
- * - Skipped: 0/3 (synthesize node is skipped by the router)
- */
 export const synthesizeNode: GraphNode<ReflectionState, SynthesizeOutput> = {
   name: "synthesize",
   run: async (input: NodeInput<ReflectionState>): Promise<SynthesizeOutput> => {
-    const { state, tools } = input;
+    const { state } = input;
+    const adversaryOutput = state.adversaryOutput;
 
-    // Read current state to access adversary output.
-    const stateSnapshot = await (tools.readState as Function)() as Partial<ReflectionState>;
-    const adversaryOutput = stateSnapshot.adversaryOutput ?? state.adversaryOutput;
-
-    const degraded = Object.entries(stateSnapshot.lensOutputs ?? state.lensOutputs)
+    const degraded = Object.entries(state.lensOutputs)
       .filter(([, out]) => out.status === "degraded" || out.status === "failed")
       .map(([name]) => name);
 
@@ -34,19 +24,26 @@ export const synthesizeNode: GraphNode<ReflectionState, SynthesizeOutput> = {
     };
 
     state.proposedDiffs = proposedDiffs;
+
+    // Write reflection event and apply DNA updates.
+    writeReflection(state, {
+      lensOutputs: state.lensOutputs,
+      adversaryOutput: adversaryOutput,
+      proposedDiffs,
+    });
+
     return output;
   },
 };
 
 function buildProposedDiffs(
-  adversaryOutput: import("../state.js").AdversaryOutput | null,
+  adversaryOutput: AdversaryOutput | null,
 ): ProposedDiff[] {
   if (!adversaryOutput) return [];
 
   const diffs: ProposedDiff[] = [];
   for (const v of adversaryOutput.verdicts) {
     if (v.verdict !== "confirmed") continue;
-    // For each confirmed signal, propose a preference add.
     diffs.push({
       section: "preferences",
       action: "add",

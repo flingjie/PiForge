@@ -1,22 +1,12 @@
 import type { GraphNode, NodeInput } from "../../graph/types.js";
 import type { ReflectionState, PatternLensOutput } from "../state.js";
 
-/**
- * Pattern Lens — identifies recurring patterns, abstraction layers,
- * and cross-domain connections.
- *
- * Prompt template mirrors reflection-protocol.md §Pattern Lens.
- */
 export const patternLensNode: GraphNode<ReflectionState, PatternLensOutput> = {
   name: "pattern_lens",
   run: async (input: NodeInput<ReflectionState>): Promise<PatternLensOutput> => {
-    const { state, tools } = input;
+    const { state } = input;
+    const dna = state.userDNA as Record<string, unknown>;
 
-    const stateSnapshot = await (tools.readState as Function)() as Partial<ReflectionState>;
-    const transcriptData = await (tools.getTranscript as Function)() as { transcript: string };
-    const transcript = transcriptData.transcript || state.transcript;
-
-    const dna = (stateSnapshot.userDNA ?? state.userDNA) as Record<string, unknown>;
     const output: PatternLensOutput = {
       lens: "pattern",
       segments: [
@@ -28,7 +18,7 @@ export const patternLensNode: GraphNode<ReflectionState, PatternLensOutput> = {
         },
       ],
       focus_segments: ["conversation"],
-      summary: `Pattern extraction from transcript (${transcript.length} chars).`,
+      summary: `Pattern extraction from transcript (${state.transcript.length} chars).`,
       identified_patterns: extractPatterns(dna),
       abstraction_layers: [],
       cross_domain_connections: [],

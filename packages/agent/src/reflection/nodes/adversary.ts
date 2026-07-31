@@ -5,23 +5,14 @@ import type { ReflectionState, AdversaryOutput, AdversaryVerdict, LensOutput } f
  * Adversary Agent — a calibrated skeptic that reviews all three lens outputs.
  *
  * Runs cross-corroboration: confirmed signals from one lens should find
- * supporting evidence in others. Produces verdicts and action experiments.
- *
- * Behaviour varies by gate result:
- * - 3/3: full cross-corroboration
- * - 2/3: relaxed cross-corroboration (degraded lens gets less weight)
- * - 1/3: minimal — only the single surviving lens is used
+ * supporting evidence in others. Behaviour varies by gate result.
  */
 export const adversaryNode: GraphNode<ReflectionState, AdversaryOutput> = {
   name: "adversary",
   run: async (input: NodeInput<ReflectionState>): Promise<AdversaryOutput> => {
-    const { state, tools } = input;
+    const { state } = input;
 
-    // Read all lens outputs and state.
-    const stateSnapshot = await (tools.readState as Function)() as Partial<ReflectionState>;
-    const lensOutputs = stateSnapshot.lensOutputs ?? state.lensOutputs;
-
-    const verdicts = buildVerdicts(lensOutputs, state.gateResult);
+    const verdicts = buildVerdicts(state.lensOutputs, state.gateResult);
     const qualityScore = computeQualityScore(verdicts);
 
     const output: AdversaryOutput = {
@@ -43,7 +34,7 @@ function buildVerdicts(
   gateResult: string,
 ): AdversaryVerdict[] {
   const verdicts: AdversaryVerdict[] = [];
-  const crossCorroborate = gateResult !== "1/3"; // Relax when only one lens survived.
+  const crossCorroborate = gateResult !== "1/3";
 
   for (const [name, output] of Object.entries(lensOutputs)) {
     if (!output || output.status === "failed") continue;
@@ -58,9 +49,7 @@ function buildVerdicts(
         : `Single-lens mode — verdict based solely on ${name} lens (${output.status}).`,
     });
 
-    // If the lens had specific findings, enumerate them.
-    const findings = extractFindings(output);
-    for (const finding of findings) {
+    for (const finding of extractFindings(output)) {
       verdicts.push({
         signal: finding,
         verdict: confidence,
@@ -74,25 +63,18 @@ function buildVerdicts(
 
 function extractFindings(output: LensOutput): string[] {
   const findings: string[] = [];
-  // Extract signals from lens-specific keys if present.
   const extra = output as Record<string, unknown>;
   const candidateValues = extra.candidate_values as Array<{ key: string; score: number }> | undefined;
   if (candidateValues) {
-    for (const cv of candidateValues) {
-      findings.push(`value: ${cv.key} (score: ${cv.score})`);
-    }
+    for (const cv of candidateValues) findings.push(`value: ${cv.key} (score: ${cv.score})`);
   }
   const demonstrated = extra.demonstrated_abilities as Array<{ ability: string }> | undefined;
   if (demonstrated) {
-    for (const da of demonstrated) {
-      findings.push(`ability: ${da.ability}`);
-    }
+    for (const da of demonstrated) findings.push(`ability: ${da.ability}`);
   }
   const patterns = extra.identified_patterns as Array<{ pattern: string }> | undefined;
   if (patterns) {
-    for (const p of patterns) {
-      findings.push(`pattern: ${p.pattern}`);
-    }
+    for (const p of patterns) findings.push(`pattern: ${p.pattern}`);
   }
   return findings;
 }
@@ -117,15 +99,11 @@ function buildExperiments(
 }
 
 function findDeepDiveCandidates(verdicts: AdversaryVerdict[]): string[] {
-  return verdicts
-    .filter((v) => v.verdict === "uncertain")
-    .map((v) => v.signal);
+  return verdicts.filter((v) => v.verdict === "uncertain").map((v) => v.signal);
 }
 
 function findFilteredSignals(verdicts: AdversaryVerdict[]): string[] {
-  return verdicts
-    .filter((v) => v.verdict === "rejected")
-    .map((v) => v.signal);
+  return verdicts.filter((v) => v.verdict === "rejected").map((v) => v.signal);
 }
 
 function buildSummary(verdicts: AdversaryVerdict[]): string {

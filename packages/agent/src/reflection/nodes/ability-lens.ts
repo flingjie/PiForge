@@ -1,19 +1,10 @@
 import type { GraphNode, NodeInput } from "../../graph/types.js";
 import type { ReflectionState, AbilityLensOutput } from "../state.js";
 
-/**
- * Ability Lens — extracts demonstrated and emerging capabilities.
- *
- * Prompt template mirrors reflection-protocol.md §Ability Lens.
- */
 export const abilityLensNode: GraphNode<ReflectionState, AbilityLensOutput> = {
   name: "ability_lens",
   run: async (input: NodeInput<ReflectionState>): Promise<AbilityLensOutput> => {
-    const { state, tools } = input;
-
-    const stateSnapshot = await (tools.readState as Function)() as Partial<ReflectionState>;
-    const transcriptData = await (tools.getTranscript as Function)() as { transcript: string };
-    const transcript = transcriptData.transcript || state.transcript;
+    const { state } = input;
 
     const output: AbilityLensOutput = {
       lens: "ability",
@@ -26,8 +17,8 @@ export const abilityLensNode: GraphNode<ReflectionState, AbilityLensOutput> = {
         },
       ],
       focus_segments: ["conversation"],
-      summary: `Ability extraction from transcript (${transcript.length} chars).`,
-      demonstrated_abilities: extractAbilities(stateSnapshot.userDNA ?? state.userDNA),
+      summary: `Ability extraction from transcript (${state.transcript.length} chars).`,
+      demonstrated_abilities: extractAbilities(state.userDNA),
       emerging_edges: [],
       new_connections: [],
       status: "passed",

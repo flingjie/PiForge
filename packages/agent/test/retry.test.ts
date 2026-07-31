@@ -1,21 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { withRetry, RetryExhaustedError } from "../src/graph/retry.js";
-import type { GraphNode, GraphState, ToolSet } from "../src/graph/types.js";
+import type { GraphNode, GraphState } from "../src/graph/types.js";
 
 interface TestState extends GraphState {
   _feedback?: Record<string, unknown>;
 }
 
 function makeState(): TestState {
-  return {
-    checkpoints: [],
-    routeLog: [],
-    nodeResults: {},
-    status: "running",
-  };
+  return { checkpoints: [], nodeResults: {}, status: "running" };
 }
-
-const emptyTools: ToolSet = {};
 
 describe("withRetry", () => {
   it("returns output on first success, no retries", async () => {
@@ -25,8 +18,7 @@ describe("withRetry", () => {
       retryConfig: { maxRetries: 2, feedbackFn: () => ({}) },
     };
 
-    const state = makeState();
-    const result = await withRetry(node, { state, tools: emptyTools }, () => emptyTools);
+    const result = await withRetry(node, { state: makeState() }, "test");
     expect(result.output).toBe("ok");
     expect(result.retryCount).toBe(0);
   });
@@ -35,16 +27,11 @@ describe("withRetry", () => {
     let calls = 0;
     const node: GraphNode<TestState> = {
       name: "flaky",
-      run: async () => {
-        calls++;
-        if (calls < 2) throw new Error("transient error");
-        return "recovered";
-      },
+      run: async () => { calls++; if (calls < 2) throw new Error("transient"); return "recovered"; },
       retryConfig: { maxRetries: 2, feedbackFn: (n) => ({ attempt: n, hint: "try harder" }) },
     };
 
-    const state = makeState();
-    const result = await withRetry(node, { state, tools: emptyTools }, () => emptyTools);
+    const result = await withRetry(node, { state: makeState() }, "flaky");
     expect(result.output).toBe("recovered");
     expect(result.retryCount).toBe(1);
     expect(calls).toBe(2);
@@ -53,32 +40,21 @@ describe("withRetry", () => {
   it("throws RetryExhaustedError when all retries fail", async () => {
     const node: GraphNode<TestState> = {
       name: "doomed",
-      run: async () => {
-        throw new Error("always fails");
-      },
+      run: async () => { throw new Error("always fails"); },
       retryConfig: { maxRetries: 1, feedbackFn: (n) => ({ attempt: n }) },
     };
 
-    const state = makeState();
-    await expect(
-      withRetry(node, { state, tools: emptyTools }, () => emptyTools),
-    ).rejects.toThrow(RetryExhaustedError);
+    await expect(withRetry(node, { state: makeState() }, "doomed")).rejects.toThrow(RetryExhaustedError);
   });
 
   it("never retries when node has no retryConfig", async () => {
     let calls = 0;
     const node: GraphNode<TestState> = {
       name: "simple",
-      run: async () => {
-        calls++;
-        throw new Error("fail");
-      },
+      run: async () => { calls++; throw new Error("fail"); },
     };
 
-    const state = makeState();
-    await expect(
-      withRetry(node, { state, tools: emptyTools }, () => emptyTools),
-    ).rejects.toThrow(RetryExhaustedError);
-    expect(calls).toBe(1); // 0th attempt only, no retries.
+    await expect(withRetry(node, { state: makeState() }, "simple")).rejects.toThrow(RetryExhaustedError);
+    expect(calls).toBe(1);
   });
 });

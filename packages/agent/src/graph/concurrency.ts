@@ -1,8 +1,8 @@
-import type { GraphNode, GraphState, NodeResult, ToolSet } from "./types.js";
+import type { GraphNode, GraphState, NodeResult } from "./types.js";
 
 /**
  * Run multiple nodes in parallel and wait for all to complete (barrier).
- * Each node receives the same state snapshot and its own permitted tool set.
+ * Each node receives the same state snapshot.
  * Results are merged back into `state.nodeResults`.
  *
  * If any node throws, its slot is recorded as `failed` but the barrier still
@@ -11,15 +11,13 @@ import type { GraphNode, GraphState, NodeResult, ToolSet } from "./types.js";
 export async function parallel<TState extends GraphState>(
   nodes: GraphNode<TState>[],
   state: TState,
-  getTools: (nodeName: string) => ToolSet,
 ): Promise<Record<string, unknown>> {
   const results: Record<string, unknown> = {};
 
   const tasks = nodes.map(async (node) => {
     const start = Date.now();
     try {
-      const tools = getTools(node.name);
-      const output = await node.run({ state, tools });
+      const output = await node.run({ state });
       const nodeResult: NodeResult = {
         nodeName: node.name,
         status: "success",
