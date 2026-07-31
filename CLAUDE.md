@@ -99,6 +99,40 @@ npm ci --ignore-scripts
 - No fluff or cheerful filler
 - Answer the user's question before making edits
 
+## Plan Before Code
+
+Non-trivial changes require a written plan before implementation. Skip the plan only for typo fixes, single-line changes, or trivial renames.
+
+### When to plan
+
+Write a plan when ANY of these apply:
+- New feature or module
+- Multiple files will change
+- Design decisions are unresolved (API surface, data flow, routing)
+- The change affects existing architecture or interfaces
+- More than ~50 lines of new code
+
+### How to plan
+
+1. **Enter plan mode** — use `EnterPlanMode` to explore the codebase and design the approach
+2. **Resolve ambiguity** — for complex design decisions, use grilling (`/mattpocock-skills:grilling`) to walk the decision tree one question at a time. Each answer constrains the next question. Don't jump ahead.
+3. **Write the plan** — save to `.claude/plans/<slug>.md`. The plan file must include:
+   - **Context** — why this change, what problem it solves
+   - **Design decisions** — key choices made and their rationale
+   - **Implementation steps** — concrete, bite-sized, in dependency order
+   - **Verification** — how to test end-to-end (specific commands)
+4. **Get approval** — use `ExitPlanMode` to present the plan. Don't start coding until approved.
+
+### What a good plan looks like
+
+- References existing code patterns and files to reuse
+- Names concrete files to create or modify
+- Each step is independently verifiable
+- Covers both the happy path and edge cases (error handling, degraded modes, cycle limits)
+- Scopes what's out of scope as clearly as what's in
+
+For larger features, pair the plan with a grilling session: the plan captures the *what* and *how*; grilling resolves the *why* for each design choice.
+
 ## Git Conventions
 
 ### Commits
@@ -112,6 +146,19 @@ npm ci --ignore-scripts
 
 - Feature branches from main: `feature/<description>` or `fix/<description>`
 - Never force push, never `git reset --hard`
+
+## GitHub Operations
+
+- **Default to `gh` CLI** for all GitHub-related searches, analysis, and queries — do NOT use `web_search` or `web_fetch` for GitHub content
+- Use `gh search issues` / `gh search prs` to find issues and pull requests
+- Use `gh issue view` / `gh pr view` to inspect specific items
+- Use `gh api` for advanced GitHub API queries (e.g., `gh api /repos/{owner}/{repo}/...`)
+- Use `gh repo view` for repository metadata and analysis
+- Use `gh browse` to open GitHub URLs in browser when needed
+- For searching code on GitHub: `gh search code`
+- Always use `--json` flag with `gh` commands for structured output when available
+- When searching, narrow results with flags like `--limit`, `--label`, `--author`, `--state`
+- Before fetching external GitHub content via `web_fetch`, check if `gh` can provide the same data
 
 ## Dependency Management
 
