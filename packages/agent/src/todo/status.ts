@@ -1,15 +1,29 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync } from "node:fs";
+
+const VALID_STATUSES = new Set([
+  "pending",
+  "in_progress",
+  "completed",
+  "failed",
+  "skipped",
+]);
 
 /**
  * Updates the Status cell of a single node row in a TODO markdown file.
- * This is the single writer for the Status column — it reads the file,
- * rewrites one row, and writes the file back atomically for the caller.
+ * Writes to a temporary file in the same directory and renames it over the
+ * original, so a crash mid-write never leaves the file in a partial state.
  */
 export function updateStatus(
   todoPath: string,
   nodeId: number,
   newStatus: string,
 ): void {
+  if (!VALID_STATUSES.has(newStatus)) {
+    throw new Error(
+      `Invalid status "${newStatus}"; allowed values: ${[...VALID_STATUSES].sort().join(", ")}`,
+    );
+  }
+
   let content = readFileSync(todoPath, "utf-8");
   const lines = content.split("\n");
   let found = false;
@@ -32,7 +46,9 @@ export function updateStatus(
 
   if (!found) throw new Error(`Node with ID ${nodeId} not found in ${todoPath}`);
 
-  writeFileSync(todoPath, lines.join("\n"), "utf-8");
+  const tempPath = `${todoPath}.${process.pid}.tmp`;
+  writeFileSync(tempPath, lines.join("\n"), "utf-8");
+  renameSync(tempPath, todoPath);
 }
 
 /**
@@ -42,13 +58,15 @@ export function updateStatus(
 export function readStatuses(todoPath: string): Map<number, string> {
   const content = readFileSync(todoPath, "utf-8");
   const statuses = new Map<number, string>();
-  const rowRegex = /^\|\s*(\d+)\s+\|.+?\|\s*(\S+)\s*\|$/;
 
   for (const line of content.split("\n")) {
-    const match = line.match(rowRegex);
-    if (!match) continue;
-    const id = parseInt(match[1]!, 10);
-    const status = match[2]!;
+    if (!line.startsWith("|")) continue;
+    const cells = line.split("|");
+    if (cells.length < 3) continue;
+    const id = parseInt(cells[1]!.trim(), 10);
+    if (isNaN(id)) continue;
+    // Status is the second-to-last cell (last is empty after trailing |)
+    const status = cells[cells.length - 2]!.trim();
     statuses.set(id, status);
   }
 

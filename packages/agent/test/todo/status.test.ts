@@ -64,6 +64,26 @@ describe("updateStatus", () => {
     );
   });
 
+  it("throws on invalid status value", () => {
+    expect(() => updateStatus(TEST_FILE, 1, "done")).toThrow(
+      "Invalid status",
+    );
+    expect(() => updateStatus(TEST_FILE, 1, "pendng")).toThrow(
+      "Invalid status",
+    );
+    expect(() => updateStatus(TEST_FILE, 1, "pending|evil")).toThrow(
+      "Invalid status",
+    );
+  });
+
+  it("does not modify the file when the status is invalid", () => {
+    expect(() => updateStatus(TEST_FILE, 1, "bad status")).toThrow(
+      "Invalid status",
+    );
+    const content = readFileSync(TEST_FILE, "utf-8");
+    expect(content).toContain("| 1  | task1 | a.ts  | vitest | -        | pending |");
+  });
+
   it("maintains exact content structure after update", () => {
     updateStatus(TEST_FILE, 1, "completed");
     const content = readFileSync(TEST_FILE, "utf-8");

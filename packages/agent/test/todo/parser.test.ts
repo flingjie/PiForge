@@ -73,4 +73,107 @@ describe("parseTodoGraph", () => {
       "No concurrent groups found",
     );
   });
+
+  it("throws when dependsOn references a non-existent node", () => {
+    const bad = `# TODO: test
+
+## Node Table
+| ID | Name | Files | Verify | DependsOn | Status |
+|----|------|-------|--------|-----------|--------|
+| 1  | a | a.ts | vitest | 99 | pending |
+
+## Concurrent Groups
+G1: [1]
+`;
+    expect(() => parseTodoGraph(bad)).toThrow(
+      "Node 1 depends on node 99, but node 99 does not exist",
+    );
+  });
+
+  it("throws when a group references a non-existent node", () => {
+    const bad = `# TODO: test
+
+## Node Table
+| ID | Name | Files | Verify | DependsOn | Status |
+|----|------|-------|--------|-----------|--------|
+| 1  | a | a.ts | vitest | - | pending |
+
+## Concurrent Groups
+G1: [1]
+G2: [99]
+`;
+    expect(() => parseTodoGraph(bad)).toThrow(
+      "Group G2 references node 99",
+    );
+  });
+
+  it("throws when a node appears in multiple groups", () => {
+    const bad = `# TODO: test
+
+## Node Table
+| ID | Name | Files | Verify | DependsOn | Status |
+|----|------|-------|--------|-----------|--------|
+| 1  | a | a.ts | vitest | - | pending |
+| 2  | b | b.ts | vitest | 1 | pending |
+
+## Concurrent Groups
+G1: [1]
+G2: [2]
+G3: [1]
+`;
+    expect(() => parseTodoGraph(bad)).toThrow(
+      "Node 1 appears in both G1 and G3",
+    );
+  });
+
+  it("throws when a node is missing from all groups", () => {
+    const bad = `# TODO: test
+
+## Node Table
+| ID | Name | Files | Verify | DependsOn | Status |
+|----|------|-------|--------|-----------|--------|
+| 1  | a | a.ts | vitest | - | pending |
+| 2  | b | b.ts | vitest | 1 | pending |
+
+## Concurrent Groups
+G1: [1]
+`;
+    expect(() => parseTodoGraph(bad)).toThrow(
+      "Node 2 does not appear in any concurrent group",
+    );
+  });
+
+  it("throws when a dependency is not in an earlier group", () => {
+    const bad = `# TODO: test
+
+## Node Table
+| ID | Name | Files | Verify | DependsOn | Status |
+|----|------|-------|--------|-----------|--------|
+| 1  | a | a.ts | vitest | - | pending |
+| 2  | b | b.ts | vitest | 1 | pending |
+
+## Concurrent Groups
+G1: [2]
+G2: [1]
+`;
+    expect(() => parseTodoGraph(bad)).toThrow(
+      "Node 2 (G1) depends on node 1 (G2), but a dependency must appear in an earlier group",
+    );
+  });
+
+  it("allows empty groups", () => {
+    const withEmpty = `# TODO: test
+
+## Node Table
+| ID | Name | Files | Verify | DependsOn | Status |
+|----|------|-------|--------|-----------|--------|
+| 1  | a | a.ts | vitest | - | pending |
+
+## Concurrent Groups
+G1: []
+G2: [1]
+`;
+    const graph = parseTodoGraph(withEmpty);
+    expect(graph.groups).toEqual([[], [1]]);
+  });
 });

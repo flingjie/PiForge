@@ -164,4 +164,32 @@ describe("runOrchestrator", () => {
     const node4 = report.nodes.find((n) => n.nodeId === 4);
     expect(node4?.status).toBe("skipped");
   });
+
+  it("handles empty groups without error", async () => {
+    const emptyGroupTodo = `# TODO: test
+
+## Node Table
+| ID | Name | Files | Verify | DependsOn | Status |
+|----|------|-------|--------|-----------|--------|
+| 1  | task1 | a.ts  | tsc   | -        | pending |
+| 2  | task2 | b.ts  | tsc   | 1        | pending |
+
+## Concurrent Groups
+G1: [1]
+G2: []
+G3: [2]
+`;
+    writeFileSync(TEST_TODO, emptyGroupTodo, "utf-8");
+
+    const executor = makeExecutor(new Map());
+    const report = await runOrchestrator(
+      { maxRetries: 0, todoPath: TEST_TODO },
+      executor,
+    );
+
+    expect(report.totalNodes).toBe(2);
+    expect(report.completed).toBe(2);
+    expect(report.failed).toBe(0);
+    expect(report.skipped).toBe(0);
+  });
 });

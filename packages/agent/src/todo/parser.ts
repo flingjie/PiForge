@@ -2,6 +2,11 @@ import type { TodoGraph, TodoNode } from "./types.js";
 
 const NODE_TABLE_HEADER = "| ID | Name | Files | Verify | DependsOn | Status |";
 
+interface ParsedGroup {
+  label: string;
+  ids: number[];
+}
+
 function parseDependsOn(raw: string): number[] {
   const trimmed = raw.trim();
   if (trimmed === "-" || trimmed === "") return [];
@@ -55,26 +60,95 @@ function parseNodeTable(content: string): TodoNode[] {
   return nodes;
 }
 
-function parseGroups(content: string): number[][] {
-  const groups: number[][] = [];
-  const groupRegex = /^G\d+:\s*\[([^\]]+)\]/gm;
+function parseGroups(content: string): ParsedGroup[] {
+  const groups: ParsedGroup[] = [];
+  const groupRegex = /^G\d+:\s*\[([^\]]*)\]/gm;
   let match: RegExpExecArray | null;
 
   while ((match = groupRegex.exec(content)) !== null) {
-    const ids = match[1]!.split(",").map((s) => {
-      const id = parseInt(s.trim(), 10);
-      if (isNaN(id)) throw new Error(`Invalid group entry: "${s.trim()}"`);
-      return id;
-    });
-    groups.push(ids);
+    const label = match[0].slice(0, match[0].indexOf(":"));
+    const ids = match[1]!
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s !== "")
+      .map((s) => {
+        const id = parseInt(s, 10);
+        if (isNaN(id)) throw new Error(`Invalid group entry: "${s}"`);
+        return id;
+      });
+    groups.push({ label, ids });
   }
 
   if (groups.length === 0) throw new Error("No concurrent groups found in content");
   return groups;
 }
 
+/**
+ * Validates that the parsed graph is internally consistent:
+ * - Every `dependsOn` target exists in the node table.
+ * - Every group entry references an existing node.
+ * - Every node appears in exactly one group.
+ * - Every dependency executes in a strictly earlier group than its dependent.
+ */
+function validateGraph(nodes: TodoNode[], groups: ParsedGroup[]): void {
+  const nodeIds = new Set(nodes.map((n) => n.id));
+
+  // Every dependsOn target must exist in the node table.
+  for (const node of nodes) {
+    for (const dep of node.dependsOn) {
+      if (!nodeIds.has(dep)) {
+        throw new Error(
+          `Node ${node.id} depends on node ${dep}, but node ${dep} does not exist in the node table`,
+        );
+      }
+    }
+  }
+
+  // Every group entry must reference an existing node, and every node must
+  // appear in exactly one group.
+  const groupOf = new Map<number, number>();
+  for (let g = 0; g < groups.length; g++) {
+    for (const id of groups[g]!.ids) {
+      if (!nodeIds.has(id)) {
+        throw new Error(
+          `Group ${groups[g]!.label} references node ${id}, but node ${id} does not exist in the node table`,
+        );
+      }
+      const prev = groupOf.get(id);
+      if (prev !== undefined) {
+        throw new Error(
+          `Node ${id} appears in both ${groups[prev]!.label} and ${groups[g]!.label}; every node must appear in exactly one group`,
+        );
+      }
+      groupOf.set(id, g);
+    }
+  }
+
+  for (const node of nodes) {
+    if (!groupOf.has(node.id)) {
+      throw new Error(
+        `Node ${node.id} does not appear in any concurrent group`,
+      );
+    }
+  }
+
+  // Dependencies must execute in strictly earlier groups.
+  for (const node of nodes) {
+    const aGroup = groupOf.get(node.id)!;
+    for (const dep of node.dependsOn) {
+      const bGroup = groupOf.get(dep)!;
+      if (bGroup >= aGroup) {
+        throw new Error(
+          `Node ${node.id} (${groups[aGroup]!.label}) depends on node ${dep} (${groups[bGroup]!.label}), but a dependency must appear in an earlier group`,
+        );
+      }
+    }
+  }
+}
+
 export function parseTodoGraph(content: string): TodoGraph {
   const nodes = parseNodeTable(content);
-  const groups = parseGroups(content);
-  return { nodes, groups };
+  const parsedGroups = parseGroups(content);
+  validateGraph(nodes, parsedGroups);
+  return { nodes, groups: parsedGroups.map((g) => g.ids) };
 }
