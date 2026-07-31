@@ -1,30 +1,50 @@
 ---
 name: goal
 description: >
-  Claude Code-style goal and task management. Define multi-step goals, break
-  them into ordered subtasks with dependencies, track progress. Triggers on:
-  "/goal", "/tasks", "set a goal", "create task", "todo list", "任务列表",
-  "查看任务", "what's next", "track progress", "define goal".
-  Tasks persist in state/goal.json across sessions.
+  Goal and task management with superpower skills integration. Define goals,
+  break them into typed subtasks with dependencies, and each task auto-maps to
+  the right superpower skill for execution. Triggers on: "/goal", "/tasks",
+  "set a goal", "create task", "todo list", "任务列表", "查看任务", "what's next",
+  "track progress", "define goal". Tasks persist in state/goal.json across sessions.
+  When executing tasks, invokes the matching superpower skill (brainstorming,
+  tdd, systematic-debugging, subagent-driven-development, etc.) automatically.
 ---
 
 # Goal Skill
 
-Define goals, break them into tasks with dependencies, and track progress.
+Define goals, classify tasks by type, and execute them through superpower skills.
+
+## Task Type → Superpower Skill Mapping
+
+When creating tasks, classify each one. The type determines which superpower skill to invoke at execution time.
+
+| Task Type | Superpower Skill | When to Use |
+|-----------|-----------------|-------------|
+| `explore` | `superpowers:brainstorming` | Understanding codebase, exploring options, research |
+| `plan` | `superpowers:writing-plans` | Designing architecture, writing implementation plans |
+| `implement` | `superpowers:test-driven-development` | Writing new features or fixing bugs with tests first |
+| `implement-parallel` | `superpowers:subagent-driven-development` | Multiple independent implementation tasks |
+| `dispatch` | `superpowers:dispatching-parallel-agents` | Fanning out to parallel subagents |
+| `debug` | `superpowers:systematic-debugging` | Investigating bugs, test failures, unexpected behavior |
+| `verify` | `superpowers:verification-before-completion` | Confirming fixes, checking tests pass, validating output |
+| `review` | `superpowers:requesting-code-review` | Reviewing completed work before merging |
+| `handle-feedback` | `superpowers:receiving-code-review` | Processing code review feedback |
+| `integrate` | `superpowers:finishing-a-development-branch` | Merging, PR creation, cleanup after implementation |
+| `isolate` | `superpowers:using-git-worktrees` | Work that needs isolation from current workspace |
 
 ## Commands
 
 | Command | Purpose |
 |---------|---------|
-| `/goal <description>` | Define a new goal and auto-generate task list |
-| `/goal add <task>` | Add a single task to the current goal |
-| `/goal status` | Show current goal with task progress |
+| `/goal <description>` | Define a new goal, auto-generate typed tasks |
+| `/goal add <task>` | Add a single task |
+| `/goal status` | Show current goal with task types and skills |
 | `/tasks` | Alias for `/goal status` |
+| `/tasks start <id>` | Begin a task — invokes its superpower skill |
 | `/tasks done <id>` | Mark a task as completed |
 | `/tasks fail <id> <reason>` | Mark a task as failed |
 | `/tasks skip <id>` | Skip a task |
 | `/tasks unskip <id>` | Unskip a previously skipped task |
-| `/tasks reorder <id> <new_position>` | Move a task to a new position |
 | `/goal clear` | Clear the current goal (requires confirmation) |
 
 ## Workflow
@@ -33,47 +53,60 @@ Define goals, break them into tasks with dependencies, and track progress.
 
 User: `/goal "Add unit tests for all API endpoints"`
 
-Read `state/goal.json`. If one exists and is still active, ask: "已有进行中的目标: [existing]. 要替换它吗？"
+Read `state/goal.json`. If one exists and active, ask about replacing.
 
-Generate tasks:
-1. Each task: specific, actionable, verifiable — one clear deliverable
-2. Identify dependencies: which tasks must complete before others
-3. Assign priorities: `high` (blocking), `medium` (core), `low` (nice-to-have)
-4. Present for confirmation:
+Auto-classify each generated task:
 
 ```
 ## Goal: Add unit tests for all API endpoints
 
-6 tasks  |  0 done  |  0 in progress  |  6 pending
+6 tasks  |  0 done  |  ○ 6 pending
 
-P1  1. [ ] Find all untested API endpoints
-P2  2. [ ] Write tests for GET /users
-P2  3. [ ] Write tests for POST /users       (depends on: #2)
-P2  4. [ ] Write tests for GET /items/:id
-P2  5. [ ] Write tests for PUT /items/:id     (depends on: #4)
-P3  6. [ ] Run full test suite, verify coverage
+P1  1. [ ] Find all untested endpoints          [explore]  brainstorming
+P2  2. [ ] Write tests for GET /users            [implement]  tdd
+P2  3. [ ] Write tests for POST /users           [implement]  tdd       (depends on: #2)
+P2  4. [ ] Write tests for GET /items/:id        [implement]  tdd
+P2  5. [ ] Write tests for PUT /items/:id        [implement]  tdd       (depends on: #4)
+P3  6. [ ] Run full test suite, verify coverage  [verify]  verification
 
-/tasks done <id> to mark complete, /goal add "..." to add more
+/tasks start <id> to begin, /tasks done <id> to mark complete
 ```
 
-### Step 2: Track
+Each task shows its `[type]` and the matching superpower skill.
 
-As the user works through tasks, they update status:
+### Step 2: Start a Task
+
+User: `/tasks start 2`
 
 ```
-User: /tasks done 1
-Agent: Marked #1 as done. 1/6 complete. Next ready: #2, #4.
+## Task 2/6: Write tests for GET /users
+Type: implement  |  Skill: superpowers:test-driven-development
 
-User: /tasks fail 3 "API changed, need to rewrite"
-Agent: Marked #3 as failed. Reason: API changed, need to rewrite.
-       Note: #3 blocks nothing, so no impact on other tasks.
+Invoking TDD workflow:
+  1. Write a failing test first (red)
+  2. Write minimal code to pass (green)
+  3. Refactor while tests stay green
+
+Starting now...
 ```
 
-### Step 3: Complete
+Then invoke `Skill("superpowers:test-driven-development")` and proceed with the task.
 
-When all tasks done:
+### Step 3: Task Completed
+
+After the task is done (via its skill), user marks it:
+
+```
+User: /tasks done 2
+Agent: ✓ Task #2 complete. 1/6 done. 5 remaining.
+       Next ready: #3 (/tasks start 3), #4 (/tasks start 4)
+```
+
+### Step 4: Goal Complete
+
+When all tasks are `completed` or `skipped`:
 1. Set goal status → `completed`
-2. Show summary: "Goal complete: [N]/[N] tasks done."
+2. Show summary with elapsed time
 
 ## Task Schema (state/goal.json)
 
@@ -88,9 +121,11 @@ When all tasks done:
     {
       "id": 1,
       "subject": "Find all untested endpoints",
-      "description": "Scan src/routes/ for endpoints without *.test.ts",
+      "description": "Scan for endpoints without tests",
       "status": "pending",
       "priority": "high",
+      "type": "explore",
+      "skill": "superpowers:brainstorming",
       "depends_on": [],
       "blocks": [2, 3],
       "activeForm": "Finding untested endpoints",
@@ -119,50 +154,64 @@ When all tasks done:
 ## Goal: Add unit tests for all API endpoints
 Status: active  |  Created: Jul 31 14:00  |  Progress: 33%
 
-                        ┌── #2 (P2, done)
-#1 (P1, done) ──────────┤
-                        └── #3 (P2, failed: "API changed, need to rewrite")
+                        ┌── #2 (implement, done) [tdd]
+#1 (explore, done) ─────┤
+ [brainstorming]        └── #3 (implement, pending) [tdd]  blocks: #5
 
-#4 (P2, done)
-#5 (P2, pending) — depends on #4
-#6 (P3, pending)
+#4 (implement, done) [tdd]
+#5 (implement, pending) [tdd] — depends on #4
+#6 (verify, pending) [verification]
 
-✓ 3 done  |  ✗ 1 failed  |  ○ 2 pending
+✓ 3 done  |  ○ 3 pending
 
-Next ready: #5 (/tasks done 5), #6 (/tasks done 6)
+Next: /tasks start 3 → superpowers:test-driven-development
 ```
 
-## Dependencies
+## Task Type Auto-Classification
 
-Tasks declare `depends_on` (what must complete first) and `blocks` (what this task unblocks).
+When generating tasks from a goal description, classify each by analyzing its verb and deliverable:
 
-When creating tasks:
-- Auto-populate `blocks` as the reverse of `depends_on`
-- Only show tasks whose `depends_on` are all resolved as "ready"
-- If a dependency is `failed` or `skipped`, flag the dependent task as blocked
+| Pattern | Type |
+|---------|------|
+| "Find", "Explore", "Research", "Understand", "Analyze", "Scan" | `explore` |
+| "Design", "Plan", "Architect", "Blueprint" | `plan` |
+| "Implement", "Write", "Build", "Create", "Add", "Refactor" | `implement` |
+| "Debug", "Fix", "Investigate", "Diagnose" | `debug` |
+| "Test", "Verify", "Validate", "Check", "Run tests" | `verify` |
+| "Review", "Audit", "Inspect" | `review` |
+| "Merge", "Deploy", "PR", "Integrate" | `integrate` |
+| Multiple independent tasks of same type | change to `implement-parallel` or `dispatch` |
 
-## Task Statuses
+If uncertain, default to `implement`.
 
-| Status | Meaning |
-|--------|---------|
-| `pending` | Not yet started |
-| `in_progress` | Currently working on it |
-| `completed` | Done successfully |
-| `failed` | Attempted but didn't work |
-| `skipped` | Intentionally skipped |
+## Task Execution
+
+When `/tasks start <id>` is invoked:
+
+1. Read the task from `state/goal.json`
+2. Set status → `in_progress`, `started_at` → now
+3. Read the `skill` field
+4. Invoke the superpower skill with context about the task:
+   - `Skill("superpowers:test-driven-development")` — the skill loads and guides execution
+5. The skill's workflow takes over until the task is done
+6. User marks it with `/tasks done <id>`
+
+If the task has `type: "implement-parallel"` or `type: "dispatch"`:
+- Explain that these fan out to parallel subagents
+- The parent task tracks overall completion
+- Sub-tasks get their own entries in the goal
 
 ## Edge Cases
 
 | Situation | Behavior |
 |-----------|----------|
-| `/goal` with active goal | "已有进行中的目标。要替换吗？" |
-| All remaining tasks blocked | Show what's blocking each. Suggest unblocking. |
-| Empty task list | "/goal add <task> to add tasks, or /goal clear to start over." |
-| Goal file corrupted | Report error. Offer to recreate. |
-| Task depends on a failed task | Flag: "Task #N is blocked because #M failed. /tasks unskip #M or re-plan." |
+| Task has no `skill` field | Default to `superpowers:brainstorming` for explore/plan, `tdd` for implement |
+| Skill invocation fails | Suggest manual execution. Mark task as `in_progress` for user to handle. |
+| Multiple ready tasks, user doesn't specify | Show all ready tasks with their skills. Ask which to start. |
+| Task type `dispatch` or `implement-parallel` | These create sub-goals. Track completion of each sub-unit. |
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `state/goal.json` | Current goal state — read, update, persist |
+| `state/goal.json` | Current goal state with typed tasks and skill mappings |
