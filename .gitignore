@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+output/
 *.tsbuildinfo
 
 # Bun
@@ -35,6 +36,9 @@ pids/
 *.pid
 *.seed
 *.pid.lock
+
+# Personal state data
+state/
 
 # Temporary files
 *.tmp

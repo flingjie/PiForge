@@ -147,6 +147,29 @@ export default function permissionGuardExtension(pi: ExtensionAPI) {
     judgeCache.clear();
   });
 
+  /**
+   * Match a shell command against a glob pattern.
+   *
+   * Unlike minimatch (which treats * as a path-segment wildcard that cannot
+   * cross /), this uses a simple regex conversion where * matches any characters
+   * including spaces and slashes. Trailing whitespace before * is stripped so
+   * that patterns like "rm -r *" also match "rm -rf /tmp/x" (combined flags).
+   */
+  function matchCommand(command: string, pattern: string): boolean {
+    if (!pattern.includes("*")) {
+      return command === pattern || command.startsWith(pattern + " ") || command.includes(" " + pattern);
+    }
+    const escaped = pattern
+      .replace(/\s+\*/g, "*")   // strip whitespace before * (makes "rm -r *" match "rm -rf /x")
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    const regexStr = escaped.replace(/\*/g, ".*");
+    try {
+      return new RegExp("^" + regexStr + "$").test(command);
+    } catch {
+      return false;
+    }
+  }
+
   function ruleApplies(rule: PermissionRule, toolName: string, input: Record<string, unknown>): boolean {
     if (rule.tool !== undefined && rule.tool !== toolName) {
       if (!minimatch(toolName, rule.tool)) return false;
@@ -158,7 +181,7 @@ export default function permissionGuardExtension(pi: ExtensionAPI) {
 
     if (rule.command !== undefined) {
       if (toolName !== "bash") return false;
-      if (paramValue === null || !minimatch(paramValue, rule.command)) return false;
+      if (paramValue === null || !matchCommand(paramValue, rule.command)) return false;
     }
     if (rule.path !== undefined) {
       if (!["read", "write", "edit", "ls"].includes(toolName)) return false;
