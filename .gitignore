@@ -39,6 +39,7 @@ pids/
 
 # Personal state data
 state/
+.pi/permissions.json
 
 # Temporary files
 *.tmp
