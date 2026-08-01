@@ -48,3 +48,7 @@ export { createDefaultConstitution } from "./constitution/defaults.js";
 // High-level pipeline entry.
 export { runPipeline } from "./pipeline.js";
 export type { PipelineOptions, PipelineResult } from "./pipeline.js";
+
+// Pipeline Trace.
+export type { TraceOptions, RunSummary } from "./trace/types.js";
+export { savePipelineIndex, saveArenaTrace, saveTodoTrace, appendToIndex } from "./trace/store.js";

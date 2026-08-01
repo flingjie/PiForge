@@ -147,6 +147,65 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
 
+## Test Strategy Review Gate
+
+After self-review passes, present the test strategy to the user for confirmation
+BEFORE saving the plan. This gate ensures the test approach is correct before the
+plan is frozen.
+
+### What to Present
+
+Extract from the plan and present in three sections:
+
+**1. Test Case Inventory** — every test case in the plan, one line each:
+
+```
+| # | Test Name | What It Verifies | File |
+|---|-----------|-----------------|------|
+| 1 | writes pipeline index page | File content contains correct header and plan link | test/trace/store.test.ts |
+| 2 | renders multiple decisions | Two decisions both appear in arena trace | test/trace/store.test.ts |
+| 3 | does not throw on impossible path | Trace failure is caught, never propagates | test/trace/store.test.ts |
+```
+
+**2. Spec Coverage Map** — each spec requirement mapped to at least one test:
+
+```
+| Spec Requirement | Covered By Test(s) |
+|-----------------|-------------------|
+| Arena trace page with decisions | #4, #5 |
+| Best-effort error handling | #9 |
+| Pipeline ID in timestamp-hex format | #10, #11 |
+```
+
+**3. Edge Cases** — boundary conditions explicitly tested or noted as deferred:
+
+```
+| Edge Case | Status |
+|-----------|--------|
+| Empty synthesis (no decisions) | Tested (#X) |
+| Read-only output directory | Tested (#Y) |
+| null planPath | Tested (#Z) |
+| Concurrent pipeline runs | Deferred (future) |
+```
+
+### Gate Interaction
+
+After presenting the three sections, ask:
+
+> "Test strategy above. Any missing cases, wrong coverage, or edge cases you want added before I save the plan?"
+
+Wait for the user's response. If they request changes, return to the plan and
+add/modify tests. Re-run self-review, then re-present the updated test strategy.
+Only proceed to saving the plan once the user confirms.
+
+### What This Gate Is NOT
+
+- It is NOT a general "review the whole plan" gate — that happens in design-arena
+- It is NOT an approval of the implementation logic — only the test approach
+- It does NOT replace in-plan test code — it extracts summaries from it
+- It applies to ALL plans, including "simple" ones — even a single-test plan
+  gets this gate
+
 ## Execution Handoff
 
 After saving the plan, offer execution choice:

@@ -182,5 +182,69 @@ describe("Arena → TODO Graph → Orchestrator pipeline", () => {
     expect(result.report.completed).toBeGreaterThan(0);
     expect(result.report.failed).toBe(0);
     expect(result.report.skipped).toBe(0);
+    // pipelineId should be auto-generated in timestamp-hex format
+    expect(result.pipelineId).toBeDefined();
+    expect(typeof result.pipelineId).toBe("string");
+    expect(result.pipelineId).toMatch(/^\d{4}-\d{2}-\d{2}T\d{6}-[a-f0-9]{6}$/);
+  });
+
+  it("writes trace files when trace is enabled", async () => {
+    const traceDir = mkdtempSync(join(tmpdir(), "pipeline-trace-"));
+    try {
+      const executor: NodeExecutor = async (node) => ({
+        output: `created ${node.files.join(", ")}`,
+      });
+
+      const result = await runPipeline({
+        plan,
+        llm: createLLMProvider((p) => Promise.resolve(mockComplete(p))),
+        executor,
+        trace: {
+          enabled: true,
+          outputDir: traceDir,
+          planPath: "docs/superpowers/plans/2026-08-01-auth.md",
+        },
+      });
+
+      expect(result.pipelineId).toBeDefined();
+
+      // All four trace files should exist
+      expect(existsSync(join(traceDir, `pipeline-${result.pipelineId}.md`))).toBe(true);
+      expect(existsSync(join(traceDir, `arena-${result.pipelineId}.md`))).toBe(true);
+      expect(existsSync(join(traceDir, `todo-${result.pipelineId}.md`))).toBe(true);
+      expect(existsSync(join(traceDir, "index.md"))).toBe(true);
+
+      // Arena trace should contain the decision
+      const arenaContent = readFileSync(join(traceDir, `arena-${result.pipelineId}.md`), "utf-8");
+      expect(arenaContent).toContain("## Decision 1: Database Selection");
+      expect(arenaContent).toContain("| speed |");
+      expect(arenaContent).toContain("| maintain |");
+      expect(arenaContent).toContain("| minimal |");
+
+      // Index should contain the run
+      const indexContent = readFileSync(join(traceDir, "index.md"), "utf-8");
+      expect(indexContent).toContain(result.pipelineId);
+
+      // Todo trace should show completion
+      const todoContent = readFileSync(join(traceDir, `todo-${result.pipelineId}.md`), "utf-8");
+      expect(todoContent).toContain("**Completed:** 3/3");
+    } finally {
+      rmSync(traceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not write trace files when trace is disabled or not set", async () => {
+    const executor: NodeExecutor = async (node) => ({
+      output: `created ${node.files.join(", ")}`,
+    });
+
+    const result = await runPipeline({
+      plan,
+      llm: createLLMProvider((p) => Promise.resolve(mockComplete(p))),
+      executor,
+    });
+
+    expect(result.pipelineId).toBeDefined();
+    expect(result.report.completed).toBeGreaterThan(0);
   });
 });
