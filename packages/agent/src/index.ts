@@ -10,7 +10,7 @@ export type {
 export { parseTodoGraph } from "./todo/parser.js";
 export { updateStatus, readStatuses } from "./todo/status.js";
 export { generateReport } from "./todo/report.js";
-export { runOrchestrator } from "./todo/orchestrator.js";
+export { runOrchestrator, runOrchestratorFromMarkdown } from "./todo/orchestrator.js";
 
 // Design Arena.
 export type {

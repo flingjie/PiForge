@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type {
   TodoConfig,
   TodoNode,
@@ -163,4 +165,23 @@ export async function runOrchestrator(
   }
 
   return generateReport(results, startTime);
+}
+
+/**
+ * Runs the orchestrator directly from an in-memory TODO markdown string,
+ * without requiring a pre-existing file. Writes the markdown to a temp file,
+ * delegates to {@link runOrchestrator}, then cleans up the temp file.
+ */
+export async function runOrchestratorFromMarkdown(
+  todoMarkdown: string,
+  executor: NodeExecutor,
+): Promise<ExecutionReport> {
+  const dir = mkdtempSync(join(tmpdir(), "piforge-todo-"));
+  const todoPath = join(dir, "todo.md");
+  try {
+    writeFileSync(todoPath, todoMarkdown, "utf-8");
+    return await runOrchestrator({ maxRetries: 0, todoPath }, executor);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
