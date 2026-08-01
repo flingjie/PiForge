@@ -90,8 +90,6 @@ describe("runArena", () => {
     expect(result.problemsBattled).toBeGreaterThanOrEqual(1);
     expect(result.state.synthesis).not.toBeNull();
     expect(result.state.synthesis?.decisions.length).toBeGreaterThanOrEqual(1);
-    expect(result.state.validation).not.toBeNull();
-    expect(result.state.validation?.valid).toBe(true);
   });
 
   it("solutions include all core agents", async () => {

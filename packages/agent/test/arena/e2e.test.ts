@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runArena, validateDesign } from "../../src/index.js";
+import { runArena } from "../../src/index.js";
 import type { LLMProvider, ArenaConfig } from "../../src/index.js";
 
 const samplePlan = `# Auth Module
@@ -45,17 +45,5 @@ describe("Design Arena E2E", () => {
     expect(result.problemsBattled).toBeGreaterThanOrEqual(2);
     expect(result.state.synthesis?.revisedPlan).toContain("Arena Decision");
     expect(result.state.synthesis?.todoMarkdown).toContain("## Node Table");
-    expect(result.state.validation!.valid).toBe(true);
-  });
-
-  it("exported validateDesign works on arena output", () => {
-    const result = validateDesign("plan mentioning auth/handler.ts", `# TODO: test
-## Node Table
-| ID | Name | Files | Verify | DependsOn | Status |
-|----|------|-------|--------|-----------|--------|
-| 1  | x | auth/handler.ts | vitest | - | pending |
-## Concurrent Groups
-G1: [1]`);
-    expect(result.valid).toBe(true);
   });
 });

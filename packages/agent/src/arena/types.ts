@@ -45,12 +45,6 @@ export interface SynthesisResult {
   todoMarkdown: string;
 }
 
-export interface ValidationResult {
-  valid: boolean;
-  errors: Array<{ location: string; message: string }>;
-  warnings: string[];
-}
-
 export interface ArenaConfig {
   maxDepth: number;
   maxCritiqueCycles: number;
@@ -65,7 +59,6 @@ export interface ArenaState {
   critiques: Map<string, CritiqueResult>;
   currentDepth: number;
   synthesis: SynthesisResult | null;
-  validation: ValidationResult | null;
   status: "running" | "completed" | "aborted";
 }
 

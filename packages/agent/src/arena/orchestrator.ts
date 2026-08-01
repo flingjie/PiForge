@@ -13,7 +13,6 @@ import type {
 import type { Constitution, RubricDimension } from "../constitution/types.js";
 import { getCoreAgentsFromConstitution, AGENT_SYSTEM_PROMPTS, CRITIC_PROMPT, SYNTHESIZER_PROMPT, SYNTHESIZE_ALL_PROMPT } from "./agent-pool.js";
 import { createDefaultConstitution } from "../constitution/defaults.js";
-import { validateDesign } from "./validator.js";
 
 // ---- JSON helpers ----
 
@@ -205,7 +204,6 @@ function createInitialState(config: ArenaConfig, plan: string): ArenaState {
     critiques: new Map(),
     currentDepth: 0,
     synthesis: null,
-    validation: null,
     status: "running",
   };
 }
@@ -309,7 +307,6 @@ export async function runArena(
     writeFileSync(join(config.outputDir, "todo.md"), synth.todoMarkdown);
   }
 
-  state.validation = validateDesign(synth.revisedPlan, synth.todoMarkdown);
   state.status = "completed";
 
   return {

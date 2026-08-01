@@ -21,7 +21,6 @@ export type {
   CritiqueResult,
   FusedDecision,
   SynthesisResult,
-  ValidationResult,
   ArenaConfig,
   ArenaState,
   LLMProvider,
@@ -34,7 +33,6 @@ export {
   SYNTHESIZER_PROMPT,
   SYNTHESIZE_ALL_PROMPT,
 } from "./arena/agent-pool.js";
-export { validateDesign } from "./arena/validator.js";
 export { runArena } from "./arena/orchestrator.js";
 export { createLLMProvider, createCLILLMProvider } from "./arena/llm-provider.js";
 
