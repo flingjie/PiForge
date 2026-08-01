@@ -7,6 +7,7 @@ description: >
   arena", "design debate", "design review", "方案辩论", "设计评审", "设计决策",
   "架构评审", "multi-agent design", "debate this plan", "review my architecture".
   Also use when a plan has "## Design Decision:" sections that need resolution.
+allowed-tools: web_fetch
 ---
 
 # Design Arena

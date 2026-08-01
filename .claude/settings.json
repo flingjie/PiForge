@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl *)",
+      "Bash(python3 *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in *.claude/arena/*/plan.md) echo '{\"systemMessage\":\"Plan written to Arena directory. Run /arena-plan to start design debate.\"}';; esac; } 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}
