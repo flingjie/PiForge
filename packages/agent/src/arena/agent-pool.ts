@@ -1,63 +1,14 @@
-import type { AgentPersona, SubProblemType, SubProblem } from "./types.js";
+import type { SubProblem } from "./types.js";
 import type { Constitution } from "../constitution/types.js";
 
-// ---- Extension mapping ----
+// ---- Constitution-driven agent pool (single source of truth) ----
 
-const EXTENSIONS: Record<SubProblemType, AgentPersona[]> = {
-  tech_selection: ["perf"],
-  cross_module: ["scalable"],
-  critical_path: [],
-  unknown: [],
-};
-
-// ---- Core agents ----
-
-const CORE: AgentPersona[] = ["speed", "maintain", "minimal"];
-
-/**
- * Returns the built-in core agents.
- * @deprecated Read the agent pool from the Design Constitution instead via
- * {@link getCoreAgentsFromConstitution}.
- */
-export function getCoreAgents(): AgentPersona[] {
-  return [...CORE];
-}
-
-/**
- * Returns the built-in extension agents for a sub-problem type.
- * @deprecated Read the agent pool from the Design Constitution instead via
- * {@link getExtensionsFromConstitution}.
- */
-export function getExtensions(type: SubProblemType): AgentPersona[] {
-  return [...(EXTENSIONS[type] ?? [])];
-}
-
-/**
- * Returns the agents to dispatch for a sub-problem (core + extensions).
- * @deprecated Read the agent pool from the Design Constitution instead via
- * {@link getAgentsForFromConstitution}.
- */
-export function getAgentsFor(problem: SubProblem): AgentPersona[] {
-  const agents = new Set<AgentPersona>([...CORE, ...getExtensions(problem.type)]);
-  return [...agents];
-}
-
-// ---- Constitution-driven agent pool ----
-
-/**
- * Returns the core agent personas defined in the Design Constitution.
- * Reads `c.agentPool` entries where `type === "core"`.
- */
 export function getCoreAgentsFromConstitution(c: Constitution): string[] {
   return c.agentPool
     .filter((entry) => entry.type === "core")
     .map((entry) => entry.persona);
 }
 
-/**
- * Returns the extension agent personas to dispatch for a sub-problem type.
- * Reads `c.agentPoolRules` for the matching `subProblemType`.
- */
 export function getExtensionsFromConstitution(
   c: Constitution,
   type: string,
@@ -67,10 +18,6 @@ export function getExtensionsFromConstitution(
     .flatMap((rule) => rule.addPersonas);
 }
 
-/**
- * Returns the agents to dispatch for a sub-problem (core + extension rules)
- * as defined in the Design Constitution.
- */
 export function getAgentsForFromConstitution(
   c: Constitution,
   problem: SubProblem,
@@ -84,7 +31,7 @@ export function getAgentsForFromConstitution(
 
 // ---- System Prompts ----
 
-export const AGENT_SYSTEM_PROMPTS: Record<AgentPersona, string> = {
+export const AGENT_SYSTEM_PROMPTS: Record<string, string> = {
   speed: `You are a Speed-Optimized Architect. Your goal is the fastest possible implementation.
 
 **Principles:**

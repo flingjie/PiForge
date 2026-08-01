@@ -10,8 +10,10 @@ import type {
   CritiqueResult,
   FusedDecision,
 } from "./types.js";
+import type { Constitution } from "../constitution/types.js";
 import { detectGaps } from "./gap-detector.js";
-import { getAgentsFor, AGENT_SYSTEM_PROMPTS, CRITIC_PROMPT, SYNTHESIZER_PROMPT, SYNTHESIZE_ALL_PROMPT } from "./agent-pool.js";
+import { getAgentsForFromConstitution, AGENT_SYSTEM_PROMPTS, CRITIC_PROMPT, SYNTHESIZER_PROMPT, SYNTHESIZE_ALL_PROMPT } from "./agent-pool.js";
+import { createDefaultConstitution } from "../constitution/defaults.js";
 import { validateDesign } from "./validator.js";
 
 // ---- JSON helpers ----
@@ -184,8 +186,9 @@ async function battleSubProblem(
   state: ArenaState,
   problem: SubProblem,
   provider: LLMProvider,
+  constitution: Constitution,
 ): Promise<void> {
-  const personas = getAgentsFor(problem);
+  const personas = getAgentsForFromConstitution(constitution, problem);
 
   // Round 1: Generate solutions in parallel
   const solutions = await Promise.all(
@@ -239,9 +242,11 @@ export async function runArena(
   config: ArenaConfig,
   provider: LLMProvider,
   planContent: string,
+  constitution?: Constitution,
 ): Promise<ArenaResult> {
   const startTime = performance.now();
   const state = createInitialState(config, planContent);
+  const c = constitution ?? createDefaultConstitution();
   let recursiveBattles = 0;
 
   state.subProblems = detectGaps(planContent);
@@ -253,7 +258,7 @@ export async function runArena(
   }
 
   for (const problem of state.subProblems) {
-    await battleSubProblem(state, problem, provider);
+    await battleSubProblem(state, problem, provider, c);
     if (state.currentDepth > 0) recursiveBattles++;
   }
 

@@ -29,13 +29,13 @@ export type {
   ArenaResult,
 } from "./arena/types.js";
 export {
-  getCoreAgents,
-  getExtensions,
-  getAgentsFor,
   getCoreAgentsFromConstitution,
   getExtensionsFromConstitution,
   getAgentsForFromConstitution,
   AGENT_SYSTEM_PROMPTS,
+  CRITIC_PROMPT,
+  SYNTHESIZER_PROMPT,
+  SYNTHESIZE_ALL_PROMPT,
 } from "./arena/agent-pool.js";
 export { detectGaps } from "./arena/gap-detector.js";
 export { validateDesign } from "./arena/validator.js";
@@ -53,4 +53,5 @@ export type {
 } from "./constitution/types.js";
 export { loadConstitution, loadConstitutionFromFile } from "./constitution/loader.js";
 export { mergeRubric, toArenaConfig } from "./constitution/merger.js";
+export { createDefaultConstitution } from "./constitution/defaults.js";
 export { createProposal, applyProposal, serializeProposal, writeProposal, readProposals } from "./constitution/proposals.js";

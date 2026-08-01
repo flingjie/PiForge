@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { runArena, detectGaps, getAgentsFor, validateDesign } from "../../src/index.js";
+import { runArena, detectGaps, getAgentsForFromConstitution, validateDesign, createDefaultConstitution } from "../../src/index.js";
 import type { LLMProvider, ArenaConfig } from "../../src/index.js";
+
+const defaultConstitution = createDefaultConstitution();
 
 const samplePlan = `# Auth Module
 
@@ -39,7 +41,7 @@ describe("Design Arena E2E", () => {
   it("full pipeline: detect gaps → battle → validate", async () => {
     const gaps = detectGaps(samplePlan);
     expect(gaps.length).toBeGreaterThanOrEqual(1);
-    for (const gap of gaps) expect(getAgentsFor(gap).length).toBeGreaterThanOrEqual(3);
+    for (const gap of gaps) expect(getAgentsForFromConstitution(defaultConstitution, gap).length).toBeGreaterThanOrEqual(3);
 
     const config: ArenaConfig = { maxDepth: 2, maxCritiqueCycles: 1, rubric: { simplicity: 50, maintainability: 50 } };
     const provider: LLMProvider = { complete: (p) => Promise.resolve(mockComplete(p)) };

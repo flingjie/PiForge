@@ -1,37 +1,18 @@
 import { describe, it, expect } from "vitest";
 import {
-  getCoreAgents,
-  getExtensions,
-  getAgentsFor,
   getCoreAgentsFromConstitution,
   getExtensionsFromConstitution,
   getAgentsForFromConstitution,
   AGENT_SYSTEM_PROMPTS,
 } from "../../src/arena/agent-pool.js";
+import { createDefaultConstitution } from "../../src/constitution/defaults.js";
 import type { SubProblem } from "../../src/arena/types.js";
-import type { Constitution } from "../../src/constitution/types.js";
 
-const constitution: Constitution = {
-  version: 1,
-  updatedAt: "2026-08-01T00:00:00.000Z",
-  principles: [],
-  rubric: [],
-  agentPool: [
-    { persona: "speed", type: "core", description: "Speed-optimized" },
-    { persona: "maintain", type: "core", description: "Maintenance-oriented" },
-    { persona: "minimal", type: "core", description: "Minimalist" },
-    { persona: "perf", type: "extension", description: "Performance" },
-    { persona: "secure", type: "extension", description: "Security" },
-  ],
-  agentPoolRules: [
-    { subProblemType: "tech_selection", addPersonas: ["perf"] },
-    { subProblemType: "cross_module", addPersonas: ["scalable"] },
-  ],
-};
+const c = createDefaultConstitution();
 
-describe("Agent Pool", () => {
-  it("core agents always include speed, maintain, minimal", () => {
-    const core = getCoreAgents();
+describe("Agent Pool (Constitution-driven)", () => {
+  it("core agents include speed, maintain, minimal", () => {
+    const core = getCoreAgentsFromConstitution(c);
     expect(core).toContain("speed");
     expect(core).toContain("maintain");
     expect(core).toContain("minimal");
@@ -39,47 +20,39 @@ describe("Agent Pool", () => {
   });
 
   it("adds perf for tech_selection", () => {
-    const ext = getExtensions("tech_selection");
+    const ext = getExtensionsFromConstitution(c, "tech_selection");
     expect(ext).toContain("perf");
   });
 
   it("adds scalable for cross_module", () => {
-    const ext = getExtensions("cross_module");
+    const ext = getExtensionsFromConstitution(c, "cross_module");
     expect(ext).toContain("scalable");
   });
 
-  it("getAgentsFor combines core + extensions", () => {
+  it("getAgentsForFromConstitution combines core + extensions", () => {
     const problem: SubProblem = {
-      id: "p1",
-      title: "Pick a database",
-      description: "...",
-      type: "tech_selection",
-      uncertainty: "high",
-      sourceSection: "## Database",
+      id: "p1", title: "Pick a database", description: "...",
+      type: "tech_selection", uncertainty: "high", sourceSection: "## DB",
     };
-    const agents = getAgentsFor(problem);
+    const agents = getAgentsForFromConstitution(c, problem);
     expect(agents).toContain("speed");
     expect(agents).toContain("maintain");
     expect(agents).toContain("minimal");
     expect(agents).toContain("perf");
-    expect(agents).toHaveLength(4); // core 3 + perf
+    expect(agents).toHaveLength(4);
   });
 
-  it("getAgentsFor critical_path adds no extensions (no matching rule)", () => {
+  it("getAgentsForFromConstitution critical_path returns only core", () => {
     const problem: SubProblem = {
-      id: "p2",
-      title: "Core loop design",
-      description: "...",
-      type: "critical_path",
-      uncertainty: "high",
-      sourceSection: "## Main Loop",
+      id: "p2", title: "Core loop", description: "...",
+      type: "critical_path", uncertainty: "high", sourceSection: "## Loop",
     };
-    const agents = getAgentsFor(problem);
+    const agents = getAgentsForFromConstitution(c, problem);
     expect(agents).toEqual(["speed", "maintain", "minimal"]);
   });
 
   it("every core agent has a system prompt", () => {
-    for (const persona of getCoreAgents()) {
+    for (const persona of getCoreAgentsFromConstitution(c)) {
       expect(AGENT_SYSTEM_PROMPTS[persona]).toBeDefined();
       expect(AGENT_SYSTEM_PROMPTS[persona].length).toBeGreaterThan(50);
     }
@@ -91,32 +64,10 @@ describe("Agent Pool", () => {
     expect(AGENT_SYSTEM_PROMPTS["scalable"]).toBeDefined();
   });
 
-  it("getCoreAgentsFromConstitution reads core entries from the constitution", () => {
-    const core = getCoreAgentsFromConstitution(constitution);
-    expect(core).toEqual(["speed", "maintain", "minimal"]);
-  });
-
-  it("getExtensionsFromConstitution reads extension rules for a sub-problem type", () => {
-    expect(getExtensionsFromConstitution(constitution, "tech_selection")).toEqual(["perf"]);
-    expect(getExtensionsFromConstitution(constitution, "cross_module")).toEqual(["scalable"]);
-    // Unknown type has no matching rule.
-    expect(getExtensionsFromConstitution(constitution, "critical_path")).toEqual([]);
-  });
-
-  it("getAgentsForFromConstitution combines core + extension rules", () => {
-    const problem: SubProblem = {
-      id: "p3",
-      title: "Pick a database",
-      description: "...",
-      type: "tech_selection",
-      uncertainty: "high",
-      sourceSection: "## Database",
-    };
-    const agents = getAgentsForFromConstitution(constitution, problem);
-    expect(agents).toContain("speed");
-    expect(agents).toContain("maintain");
-    expect(agents).toContain("minimal");
-    expect(agents).toContain("perf");
-    expect(agents).toHaveLength(4); // core 3 + perf from rule
+  it("createDefaultConstitution produces a full constitution", () => {
+    expect(c.principles.length).toBeGreaterThan(0);
+    expect(c.rubric.length).toBeGreaterThan(0);
+    expect(c.agentPool.length).toBeGreaterThan(0);
+    expect(c.agentPoolRules.length).toBeGreaterThan(0);
   });
 });
