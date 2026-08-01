@@ -72,3 +72,17 @@ export { getCoreAgents, getExtensions, getAgentsFor, AGENT_SYSTEM_PROMPTS } from
 export { detectGaps } from "./arena/gap-detector.js";
 export { validateDesign } from "./arena/validator.js";
 export { runArena } from "./arena/orchestrator.js";
+
+// Design Constitution.
+export type {
+  ArchitecturePrinciple,
+  RubricDimension,
+  AgentPoolEntry,
+  AgentPoolRule,
+  Constitution,
+  RubricOverride,
+  AmendmentProposal,
+} from "./constitution/types.js";
+export { loadConstitution, loadConstitutionFromFile } from "./constitution/loader.js";
+export { mergeRubric, toArenaConfig } from "./constitution/merger.js";
+export { createProposal, applyProposal, serializeProposal } from "./constitution/proposals.js";
