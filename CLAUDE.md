@@ -6,65 +6,63 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PiForge is a smart assistant built on the [Pi Agent Harness](https://github.com/earendil-works/pi) — an open-source (MIT) TypeScript monorepo providing a unified LLM API, agent runtime, TUI library, and coding agent CLI. PiForge extends Pi with domain-specific tools, skills, and configurations to create a tailored intelligent assistant.
 
-## Architecture (Planned)
-
-Following Pi's layered separation of concerns, the monorepo will be structured as:
+## Project Layout
 
 ```
 PiForge/
 ├── packages/
-│   ├── ai/            # Multi-provider LLM API (extends @earendil-works/pi-ai or wraps it)
-│   ├── agent/         # Agent runtime with tool calling and state management
-│   ├── skills/        # Custom skills and tool definitions for the assistant
-│   ├── tui/           # Terminal UI library (based on @earendil-works/pi-tui)
-│   └── cli/           # CLI entry point for the smart assistant
-├── scripts/           # Build/test helpers
+│   └── agent/         # Agent runtime — the only implemented package so far
+├── .pi/
+│   ├── skills/        # Pi skills loaded by the coding agent at runtime (see available_skills in prompt)
+│   └── permissions.json  # Tool permission rules
+├── skills/            # Custom skill definitions (top-level, work-in-progress)
+├── state/             # Runtime state: goal.json, reflections.jsonl, records.jsonl, user_dna.json
 ├── docs/              # Project documentation
-├── extensions/        # Extension modules for additional capabilities
+├── references/        # External reference material (papers, specs)
+├── output/            # Generated artifacts, logs, scratch output
 ├── tsconfig.base.json
-├── biome.json
 ├── vitest.base.ts
-└── package.json       # npm workspaces root
+└── package.json       # Root (minimal — agent is the active package)
 ```
 
-**Key design principles (from Pi):**
+**What's implemented:** `packages/agent/` — an agent runtime with tool calling, state management, and real-LLM test harnesses.
+
+**What's planned:** `packages/ai/`, `packages/skills/`, `packages/tui/`, `packages/cli/` — following Pi's layered separation of concerns.
+
+### Key Design Principles
+
 - **Self-extensible** — the assistant can explain itself and modify its own configuration
 - **Provider abstraction** — `packages/ai` provides a unified interface over LLM providers (OpenAI, Anthropic, Google, etc.)
-- **Sandboxing by composition** — no built-in permission system; use containerization patterns (Docker, Gondolin micro-VMs) for isolation
 - **Skills as packages** — each skill or domain capability is an independent package that plugs into the agent runtime
 
 ## Tech Stack
 
 - **Language:** TypeScript (strict)
-- **Monorepo:** npm workspaces
-- **Runtime:** Node.js, with Bun-compiled standalone binaries for distribution
-- **Linting/Formatting:** Biome (`biome.json`)
-- **Testing:** Vitest (`vitest.base.ts`)
-- **Git hooks:** Husky (`.husky/`)
+- **Monorepo:** npm workspaces (package-level, not yet configured at root)
+- **Runtime:** Node.js
+- **Testing:** Vitest — base config at `vitest.base.ts`, per-package overrides (e.g., `packages/agent/vitest.config.ts`)
+- **Linting/Formatting:** TBD — Biome planned, not yet configured
+- **Git hooks:** TBD — Husky planned, not yet configured
 
 ## Development Commands
+
+Root has no scripts yet. All commands run from `packages/agent/`:
 
 ```bash
 # Install dependencies (no lifecycle scripts)
 npm install --ignore-scripts
 
-# Build all packages (with model data refresh)
-npm run build
+# Type check agent package
+cd packages/agent && npx tsc --noEmit
 
-# Build offline (no network, uses cached model data)
-npm run build:offline
+# Run agent tests (skips LLM tests without API keys by default)
+cd packages/agent && npx vitest run
 
-# Lint, format, and type check
-npm run check
+# Run a specific test file
+cd packages/agent && npx vitest run path/to/test.test.ts
 
-# Run tests (skips LLM-dependent tests without API keys)
-./test.sh
-
-# Run tests with vitest CLI from a package root
-npx vitest run path/to/test.test.ts
-
-# Clean install for CI
-npm ci --ignore-scripts
+# Watch mode during development
+cd packages/agent && npx vitest
 ```
 
 ## Code Standards
@@ -78,19 +76,19 @@ npm ci --ignore-scripts
 
 ### Code Quality
 
-- Run `npm run check` after code changes (not docs) — this runs lint, format, and type check but NOT tests
-- Never run `npm run build` or `npm test` unless explicitly requested
+- Type check after code changes: `cd packages/agent && npx tsc --noEmit`
+- Do NOT run build or tests unless explicitly asked or when you have created/modified a test file
 - Read files in full before making wide-ranging changes — don't rely on search snippets
 - Don't hardcode key bindings; add defaults to shared keybinding configuration constants
 - Never edit generated files directly — update the generator script and regenerate
 
 ### Tests
 
-- Use `./test.sh` from repo root for non-e2e tests
-- Run specific tests via `npx vitest` from the package root
+- Run tests from the package root: `cd packages/agent && npx vitest run`
+- For a single test file: `cd packages/agent && npx vitest run <path>`
 - Regression tests: name them `<issue-number>-<short-slug>.test.ts` and place in `test/suite/regressions/`
 - Test harnesses should use faux providers — no real provider API keys or paid tokens
-- If you create or modify a test file, run it and iterate until it passes
+- When you create or modify a test file: run it and iterate until it passes (this overrides the general "don't run tests" rule)
 
 ### Style
 
@@ -98,6 +96,65 @@ npm ci --ignore-scripts
 - No emojis in commits, issues, PRs, or code
 - No fluff or cheerful filler
 - Answer the user's question before making edits
+
+## Agent Behavior
+
+How the coding agent should operate in this repo.
+
+### Navigation & Discovery
+
+1. **Start with `ls` or `read`** to understand current layout before acting — the repo is early-stage and layout may drift from docs.
+2. **Use `rg` (ripgrep) for code search**, `ls` for directory listing, `read` for file inspection. Prefer `rg` over `grep`.
+3. **Check `package.json`** (root and per-package) for actual scripts and dependencies — these are the source of truth.
+4. **Skills are in `.pi/skills/`** — read `SKILL.md` inside a skill directory before invoking that skill.
+
+### Tool Usage
+
+- **Batch independent calls** — when multiple `read` or `bash` calls have no dependencies, issue them together in one turn.
+- **`edit` over `write`** — use `edit` for targeted changes. Use `write` only for new files or complete rewrites.
+- **Merge adjacent edits** — if two changes touch the same or nearby lines, merge into one `edit` call with multiple `edits[]` entries. Each `edits[].oldText` matches the original file, not incrementally.
+- **Small oldText** — make `oldText` as short as possible while still being unique in the file. Don't pad with large unchanged regions.
+- **Verify after changes** — after editing code, always run the relevant verify command (typecheck or test) before claiming success.
+
+### Escalation
+
+- **Ask before large changes** — if a change spans 3+ files or introduces new architecture, pause and confirm the approach with the user.
+- **Surface ambiguity** — if requirements are unclear or there are multiple valid approaches, present options rather than guessing.
+- **Auto-proceed on mechanical fixes** — typo fixes, formatting, updating stale references, single-line corrections: just do them.
+
+## Reliability & Observability
+
+### Async & Concurrency
+
+- **async/await only** — no raw `.then()`/`.catch()` chains. Every Promise must be awaited or explicitly handled (e.g., `Promise.allSettled` for fire-and-forget with error logging).
+- **Structured concurrency** — use `Promise.all` / `Promise.allSettled` for parallel work with a clear, bounded lifecycle. Never fire-and-forget without error handling.
+- **Cancellation** — long-running operations (LLM calls, network requests) must accept `AbortSignal`. Use `AbortController` for timeouts and user-initiated cancellation.
+- **Explicit ordering** — when tool calls depend on prior results, make the dependency graph explicit in code. Do not rely on implicit ordering from `await` to mask hidden dependencies.
+- **Rate limiting** — batch concurrent LLM calls with awareness of provider rate limits. Use a concurrency limiter (e.g., `p-limit`) rather than unbounded `Promise.all` against external APIs.
+
+### Error Handling
+
+- **No silent failures** — every `catch` block must either recover, rethrow with context, or log. Empty `catch {}` is banned.
+- **Error classification** — distinguish three categories:
+  - *Retryable* (rate limit, network timeout, temporary unavailability) — retry with exponential backoff and jitter.
+  - *Degradable* (tool unavailable, optional feature unsupported) — fall back to a simpler path or inform the user, do not crash.
+  - *Fatal* (auth failure, invalid config, programming error) — fail fast and report clearly.
+- **Error enrichment** — wrap errors with context before rethrowing: what was being attempted, with what inputs. Use `Error.cause` chaining.
+- **User vs system errors** — system errors (LLM API failure, network issues) must not leak raw stack traces to the user. Present a clear, actionable message.
+- **Tool errors** — a tool that throws must not crash the agent loop. Catch, log, and return a structured error result to the LLM so it can decide the next step.
+
+### Logging & Observability
+
+- **Structured logging** — log as JSON objects, not plain strings. Every log entry must include at minimum: `level`, `message`, `timestamp`, and `traceId`.
+- **Trace ID propagation** — each user request or agent run generates a `traceId` carried through all downstream calls (LLM API, tools, skills). Enables end-to-end tracing.
+- **Log levels**:
+  - `debug` — detailed internal state, prompt contents, tool inputs/outputs (verbose, development only).
+  - `info` — key lifecycle events: agent run started/completed, tool calls, skill invocations.
+  - `warn` — recoverable errors, retries, fallbacks triggered.
+  - `error` — failures that need attention: LLM API errors, tool crashes, assertion failures.
+- **Never log secrets, API keys, or PII** — sanitize before logging. Redact known sensitive fields (keys, tokens, emails, IPs).
+- **Key metrics** — track and expose: LLM call latency (p50/p95), token consumption per run, tool call success rate, agent run duration, retry count.
+- **Debug toggle** — a single env var or config flag that enables `debug` level and full prompt logging without code changes.
 
 ## Plan Before Code
 
@@ -114,7 +171,7 @@ Write a plan when ANY of these apply:
 
 ### How to plan
 
-1. **Resolve ambiguity** — for complex design decisions, use grilling (`/mattpocock-skills:grilling`) to walk the decision tree one question at a time. Each answer constrains the next question.
+1. **Resolve ambiguity** — for complex design decisions, use the brainstorming skill (`/brainstorming`) to explore the decision space before committing to an approach.
 2. **Enter plan mode** — use `EnterPlanMode` to explore the codebase and design the approach.
 3. **Write the plan** — save to `.claude/plans/<slug>.md`. The plan file must include:
    - **Context** — why this change, what problem it solves
@@ -213,7 +270,7 @@ After approval:
 
 ## Dependency Management
 
-- Direct external deps pinned to exact versions (`.npmrc`: `save-exact=true`)
+- Direct external deps pinned to exact versions (`npm install --save-exact`)
 - Never run lifecycle scripts directly — use `--ignore-scripts`
 - Refresh lockfile: `npm install --package-lock-only --ignore-scripts`
 - Treat dependency changes as reviewed code; audit before committing
