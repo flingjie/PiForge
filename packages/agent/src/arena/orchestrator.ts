@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type {
   ArenaConfig,
   ArenaState,
@@ -132,6 +134,13 @@ export async function runArena(
     revisedPlan: synthesisResult.revisedPlan,
     todoMarkdown: synthesisResult.todoMarkdown,
   };
+
+  // Write synthesis output files if an output directory is configured.
+  if (config.outputDir) {
+    mkdirSync(config.outputDir, { recursive: true });
+    writeFileSync(join(config.outputDir, "plan.md"), synthesisResult.revisedPlan);
+    writeFileSync(join(config.outputDir, "todo.md"), synthesisResult.todoMarkdown);
+  }
 
   // 5. Validate
   state.validation = validateDesign(

@@ -23,14 +23,11 @@ export interface SubProblem {
   sourceSection: string;
 }
 
-/** Agent personas available in the arena. */
-export type AgentPersona =
-  | "speed"
-  | "maintain"
-  | "minimal"
-  | "perf"
-  | "secure"
-  | "scalable";
+/**
+ * Agent personas available in the arena.
+ * Open string so Constitution-defined personas flow through the type system.
+ */
+export type AgentPersona = string;
 
 /** A single solution from one agent for one sub-problem. */
 export interface Solution {
@@ -102,6 +99,8 @@ export interface ArenaConfig {
   maxCritiqueCycles: number;
   /** Rubric dimensions with weights (dimension → weight). */
   rubric: Record<string, number>;
+  /** Directory to write synthesis output (plan.md, todo.md). Optional. */
+  outputDir?: string;
 }
 
 /** Runtime state of an arena run. */

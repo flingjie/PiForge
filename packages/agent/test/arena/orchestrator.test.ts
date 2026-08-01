@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { runArena } from "../../src/arena/orchestrator.js";
 import type {
   AgentProvider,
@@ -201,5 +204,24 @@ Use CSV for input and output.
     expect(result.recursiveBattles).toBeGreaterThanOrEqual(1);
     // Should have completed despite the recursive battle
     expect(result.state.status).toBe("completed");
+  });
+
+  it("writes plan.md and todo.md when outputDir is set", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "arena-output-"));
+    try {
+      const config: ArenaConfig = { ...defaultConfig, outputDir: dir };
+      const provider = makeMockAgentProvider();
+      const result = await runArena(config, provider, samplePlan);
+
+      expect(result.state.status).toBe("completed");
+      const planPath = join(dir, "plan.md");
+      const todoPath = join(dir, "todo.md");
+      expect(existsSync(planPath)).toBe(true);
+      expect(existsSync(todoPath)).toBe(true);
+      expect(readFileSync(planPath, "utf8")).toContain("Arena Decision");
+      expect(readFileSync(todoPath, "utf8")).toContain("## Node Table");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
