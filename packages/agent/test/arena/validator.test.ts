@@ -36,9 +36,9 @@ describe("validateDesign", () => {
 
   it("fails when plan references a file not in todo", () => {
     const plan = validPlan + "\nUses: packages/core/src/c.ts";
-    const result = validateDesign(validPlan, validTodo);
+    const result = validateDesign(plan, validTodo);
     // c.ts is mentioned in plan but not in todo nodes
-    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.warnings.some((w) => w.includes("c.ts"))).toBe(true);
   });
 
   it("fails when todo has dependency cycle", () => {
