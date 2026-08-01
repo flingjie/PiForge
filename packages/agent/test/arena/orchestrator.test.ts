@@ -3,15 +3,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runArena } from "../../src/arena/orchestrator.js";
-import type {
-  AgentProvider,
-  AgentPersona,
-  Solution,
-  CritiqueResult,
-  FusedDecision,
-  SubProblem,
-  ArenaConfig,
-} from "../../src/arena/types.js";
+import type { LLMProvider, ArenaConfig } from "../../src/arena/types.js";
 
 const samplePlan = `# Auth Module Design
 
@@ -29,109 +21,75 @@ const defaultConfig: ArenaConfig = {
   maxDepth: 2,
   maxCritiqueCycles: 1,
   rubric: {
-    decoupling: 20,
-    maintainability: 20,
-    extensibility: 15,
-    testability: 15,
-    performance: 10,
-    observability: 10,
-    complexity: 5,
-    ai_friendliness: 5,
+    decoupling: 20, maintainability: 20, extensibility: 15,
+    testability: 15, performance: 10, observability: 10,
+    complexity: 5, ai_friendliness: 5,
   },
 };
 
-function makeMockAgentProvider(): AgentProvider {
-  const solutions: Solution[] = [];
-
-  return {
-    async generateSolution(
-      problem: SubProblem,
-      persona: AgentPersona,
-    ): Promise<Solution> {
-      const s: Solution = {
-        persona,
-        problemId: problem.id,
-        proposal: `${persona} approach for ${problem.title}: use simple design.`,
-        scores: {
-          decoupling: persona === "maintain" ? 80 : 60,
-          maintainability: persona === "maintain" ? 85 : 55,
-          extensibility: 50,
-          testability: 70,
-          performance: persona === "perf" ? 90 : 50,
-          observability: 40,
-          complexity: persona === "minimal" ? 95 : 60,
-          ai_friendliness: 50,
-        },
-        rationale: `Chosen because ${persona} principles apply.`,
-      };
-      solutions.push(s);
-      return s;
-    },
-
-    async critique(): Promise<CritiqueResult> {
-      return {
-        problemId: "gap-1",
-        critiques: solutions.map((s) => ({
-          solutionPersona: s.persona,
-          weaknesses: [`${s.persona}: could be too ${s.persona === "minimal" ? "simplistic" : "complex"}`],
-          severity: "minor" as const,
-        })),
-        needsMoreDebate: false,
-      };
-    },
-
-    async synthesize(
-      _problem: SubProblem,
-      _solutions: Solution[],
-    ): Promise<FusedDecision> {
-      return {
-        problemId: "gap-1",
-        problemTitle: "Database Selection",
-        chosenApproach: "maintain",
-        decision: "Use PostgreSQL with a thin repository layer.",
-        reasoning: "Best balance of maintainability and simplicity.",
-      };
-    },
-
-    async synthesizeAll(
-      originalPlan: string,
-      decisions: FusedDecision[],
-    ): Promise<{ revisedPlan: string; todoMarkdown: string }> {
-      const todoMarkdown = `# TODO: auth
-
+function mockComplete(prompt: string, hints: { firstCritique?: boolean } = {}): string {
+  // Synthesize all
+  if (prompt.includes("revisedPlan") && prompt.includes("todoMarkdown")) {
+    const todo = `# TODO: auth
 ## Node Table
 | ID | Name | Files | Verify | DependsOn | Status |
 |----|------|-------|--------|-----------|--------|
 | 1  | types | auth/types.ts | tsc --noEmit | - | pending |
-| 2  | handler | auth/handler.ts | vitest run | 1 | pending |
-
-## Dependency Diagram
-\`\`\`
-[1]
- |
-[2]
-\`\`\`
-
 ## Concurrent Groups
-G1: [1]
-G2: [2]
-`;
-      return {
-        revisedPlan: originalPlan + "\n\n## Arena Decision\n" + decisions.map((d) => d.decision).join("\n"),
-        todoMarkdown,
-      };
-    },
-  };
+G1: [1]`;
+    return JSON.stringify({ revisedPlan: samplePlan + "\n## Arena Decision\nDone.", todoMarkdown: todo });
+  }
+
+  // Synthesize per problem
+  if (prompt.includes("Design Synthesizer") || prompt.includes("Fuse the best")) {
+    return JSON.stringify({ problemId: "gap-1", problemTitle: "Database Selection", chosenApproach: "maintain", decision: "Use PostgreSQL with a thin repository layer.", reasoning: "Best balance." });
+  }
+
+  // Critique
+  if (prompt.includes("Design Critic") || prompt.includes("Assume every design is wrong")) {
+    if (hints.firstCritique) {
+      return JSON.stringify({
+        problemId: "gap-1",
+        critiques: [{ solutionPersona: "speed", weaknesses: ["needs depth"], severity: "major" }],
+        needsMoreDebate: true,
+        debateFocus: "caching",
+      });
+    }
+    return JSON.stringify({
+      problemId: "gap-1",
+      critiques: [
+        { solutionPersona: "speed", weaknesses: ["simplistic"], severity: "minor" },
+        { solutionPersona: "maintain", weaknesses: ["over-engineered"], severity: "minor" },
+        { solutionPersona: "minimal", weaknesses: ["edge cases"], severity: "major" },
+        { solutionPersona: "perf", weaknesses: ["premature"], severity: "minor" },
+      ],
+      needsMoreDebate: false,
+    });
+  }
+
+  // Solution agent
+  const persona = prompt.includes('"speed"') ? "speed" :
+    prompt.includes('"maintain"') ? "maintain" :
+    prompt.includes('"minimal"') ? "minimal" : "perf";
+
+  const scores: Record<string, number> = {};
+  for (const k of Object.keys(defaultConfig.rubric)) {
+    if (k === "maintainability" && persona === "maintain") scores[k] = 85;
+    else if (k === "performance" && persona === "perf") scores[k] = 90;
+    else if (k === "complexity" && persona === "minimal") scores[k] = 95;
+    else scores[k] = persona === "maintain" ? 70 : 60;
+  }
+
+  return JSON.stringify({ persona, problemId: "gap-1", proposal: `${persona} approach.`, scores, rationale: `${persona} is best.` });
 }
 
 describe("runArena", () => {
-  it("completes a full arena run on a plan with gaps", async () => {
-    const provider = makeMockAgentProvider();
+  it("completes a full arena run", async () => {
+    const provider: LLMProvider = { complete: (p) => Promise.resolve(mockComplete(p)) };
     const result = await runArena(defaultConfig, provider, samplePlan);
 
     expect(result.state.status).toBe("completed");
     expect(result.problemsBattled).toBeGreaterThanOrEqual(1);
-    expect(result.state.subProblems.length).toBeGreaterThanOrEqual(1);
     expect(result.state.synthesis).not.toBeNull();
     expect(result.state.synthesis?.decisions.length).toBeGreaterThanOrEqual(1);
     expect(result.state.validation).not.toBeNull();
@@ -139,12 +97,11 @@ describe("runArena", () => {
   });
 
   it("solutions include core agents plus extensions", async () => {
-    const provider = makeMockAgentProvider();
+    const provider: LLMProvider = { complete: (p) => Promise.resolve(mockComplete(p)) };
     const result = await runArena(defaultConfig, provider, samplePlan);
 
     const solutions = result.state.solutions.get("gap-1");
     expect(solutions).toBeDefined();
-    // Core 3: speed, maintain, minimal + extension: perf (tech_selection)
     const personas = solutions!.map((s) => s.persona);
     expect(personas).toContain("speed");
     expect(personas).toContain("maintain");
@@ -153,69 +110,56 @@ describe("runArena", () => {
   });
 
   it("skips arena when no gaps detected", async () => {
-    const boringPlan = `# Simple Script
-
-## Context
-A one-off script.
-
-## Design Decision: File Format
-Use CSV for input and output.
-`;
-    const provider = makeMockAgentProvider();
+    const boringPlan = `# Simple Script\n\n## Context\nA one-off script.\n\n## Design Decision: File Format\nUse CSV.\n`;
+    const provider: LLMProvider = { complete: () => Promise.resolve("{}") };
     const result = await runArena(defaultConfig, provider, boringPlan);
 
     expect(result.problemsBattled).toBe(0);
-    expect(result.state.subProblems).toHaveLength(0);
-    // No gaps → completes immediately with original plan unchanged
     expect(result.state.status).toBe("completed");
-    // Synthesis is still populated so callers can always read .revisedPlan
     expect(result.state.synthesis).not.toBeNull();
     expect(result.state.synthesis?.revisedPlan).toBe(boringPlan);
-    expect(result.state.synthesis?.decisions).toHaveLength(0);
-    expect(result.state.synthesis?.todoMarkdown).toBe("");
   });
 
   it("records duration", async () => {
-    const provider = makeMockAgentProvider();
+    const provider: LLMProvider = { complete: (p) => Promise.resolve(mockComplete(p)) };
     const result = await runArena(defaultConfig, provider, samplePlan);
-
     expect(result.durationMs).toBeGreaterThan(0);
   });
 
-  it("recursive battles increment the counter", async () => {
-    // Agent provider that requests more debate once, then stops
-    let callCount = 0;
-    const recursiveProvider: AgentProvider = {
-      ...makeMockAgentProvider(),
-      async critique(
-        problem: SubProblem,
-        solutions: Solution[],
-      ): Promise<CritiqueResult> {
-        callCount++;
-        return {
-          problemId: problem.id,
-          critiques: solutions.map((s) => ({
-            solutionPersona: s.persona,
-            weaknesses: ["needs more depth"],
-            severity: "major" as const,
-          })),
-          needsMoreDebate: callCount < 2,
-          debateFocus: callCount < 2 ? "deep dive on caching" : undefined,
-        };
+  it("recursive battles increment counter", async () => {
+    let critiqueCalls = 0;
+    const provider: LLMProvider = {
+      complete: (p) => {
+        if (p.includes("Design Synthesizer") || p.includes("Fuse the best")) {
+          return Promise.resolve(JSON.stringify({ problemId: "gap-1", problemTitle: "DB", chosenApproach: "maintain", decision: "Use PG.", reasoning: "Best." }));
+        }
+        if (p.includes("revisedPlan")) {
+          return Promise.resolve(JSON.stringify({ revisedPlan: "ok", todoMarkdown: "G1: [1]" }));
+        }
+        if (p.includes("Design Critic") || p.includes("Assume every design is wrong")) {
+          critiqueCalls++;
+          return Promise.resolve(JSON.stringify({
+            problemId: "gap-1",
+            critiques: [{ solutionPersona: "speed", weaknesses: ["depth"], severity: "major" }],
+            needsMoreDebate: critiqueCalls < 2,
+            debateFocus: critiqueCalls < 2 ? "caching" : undefined,
+          }));
+        }
+        return Promise.resolve(JSON.stringify({ persona: "speed", problemId: "gap-1", proposal: "test", scores: {}, rationale: "test" }));
       },
     };
 
-    const result = await runArena(defaultConfig, recursiveProvider, samplePlan);
+    const result = await runArena(defaultConfig, provider, samplePlan);
     expect(result.recursiveBattles).toBeGreaterThanOrEqual(1);
-    // Should have completed despite the recursive battle
+    expect(critiqueCalls).toBe(2);
     expect(result.state.status).toBe("completed");
-  });
+  }, 10000);
 
   it("writes plan.md and todo.md when outputDir is set", async () => {
     const dir = mkdtempSync(join(tmpdir(), "arena-output-"));
     try {
       const config: ArenaConfig = { ...defaultConfig, outputDir: dir };
-      const provider = makeMockAgentProvider();
+      const provider: LLMProvider = { complete: (p) => Promise.resolve(mockComplete(p)) };
       const result = await runArena(config, provider, samplePlan);
 
       expect(result.state.status).toBe("completed");

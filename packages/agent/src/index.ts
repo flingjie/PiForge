@@ -25,7 +25,7 @@ export type {
   ValidationResult,
   ArenaConfig,
   ArenaState,
-  AgentProvider,
+  LLMProvider,
   ArenaResult,
 } from "./arena/types.js";
 export {
