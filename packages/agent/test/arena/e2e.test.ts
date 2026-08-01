@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { runArena, detectGaps, getAgentsForFromConstitution, validateDesign, createDefaultConstitution } from "../../src/index.js";
+import { runArena, validateDesign } from "../../src/index.js";
 import type { LLMProvider, ArenaConfig } from "../../src/index.js";
-
-const defaultConstitution = createDefaultConstitution();
 
 const samplePlan = `# Auth Module
 
@@ -38,16 +36,13 @@ G1: [1]`;
 }
 
 describe("Design Arena E2E", () => {
-  it("full pipeline: detect gaps → battle → validate", async () => {
-    const gaps = detectGaps(samplePlan);
-    expect(gaps.length).toBeGreaterThanOrEqual(1);
-    for (const gap of gaps) expect(getAgentsForFromConstitution(defaultConstitution, gap).length).toBeGreaterThanOrEqual(3);
-
+  it("full pipeline: battle all design decisions → validate", async () => {
     const config: ArenaConfig = { maxDepth: 2, maxCritiqueCycles: 1 };
     const provider: LLMProvider = { complete: (p) => Promise.resolve(mockComplete(p)) };
     const result = await runArena(config, provider, samplePlan);
 
     expect(result.state.status).toBe("completed");
+    expect(result.problemsBattled).toBeGreaterThanOrEqual(2);
     expect(result.state.synthesis?.revisedPlan).toContain("Arena Decision");
     expect(result.state.synthesis?.todoMarkdown).toContain("## Node Table");
     expect(result.state.validation!.valid).toBe(true);

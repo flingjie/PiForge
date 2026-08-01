@@ -11,8 +11,7 @@ import type {
   FusedDecision,
 } from "./types.js";
 import type { Constitution, RubricDimension } from "../constitution/types.js";
-import { detectGaps } from "./gap-detector.js";
-import { getAgentsForFromConstitution, AGENT_SYSTEM_PROMPTS, CRITIC_PROMPT, SYNTHESIZER_PROMPT, SYNTHESIZE_ALL_PROMPT } from "./agent-pool.js";
+import { getCoreAgentsFromConstitution, AGENT_SYSTEM_PROMPTS, CRITIC_PROMPT, SYNTHESIZER_PROMPT, SYNTHESIZE_ALL_PROMPT } from "./agent-pool.js";
 import { createDefaultConstitution } from "../constitution/defaults.js";
 import { validateDesign } from "./validator.js";
 
@@ -169,6 +168,34 @@ function parseSynthesizeAll(raw: string): { revisedPlan: string; todoMarkdown: s
 
 // ---- Orchestrator ----
 
+/** Extract every `## Design Decision:` section from the plan as a SubProblem. */
+function extractDecisions(planContent: string): SubProblem[] {
+  const decisions: SubProblem[] = [];
+  const headerRegex = /^##\s+Design Decision:\s*(.+)$/gm;
+  let match: RegExpExecArray | null;
+  let counter = 0;
+
+  while ((match = headerRegex.exec(planContent)) !== null) {
+    const title = match[1]!.trim();
+    const start = match.index + match[0].length;
+    // Find the next ## header or end of content
+    const nextHeader = planContent.indexOf("\n## ", start);
+    const body = planContent
+      .slice(start, nextHeader === -1 ? undefined : nextHeader)
+      .trim();
+
+    counter++;
+    decisions.push({
+      id: `gap-${counter}`,
+      title,
+      description: body.slice(0, 200),
+      sourceSection: `## Design Decision: ${title}`,
+    });
+  }
+
+  return decisions;
+}
+
 function createInitialState(config: ArenaConfig, plan: string): ArenaState {
   return {
     config,
@@ -189,7 +216,7 @@ async function battleSubProblem(
   provider: LLMProvider,
   constitution: Constitution,
 ): Promise<void> {
-  const personas = getAgentsForFromConstitution(constitution, problem);
+  const personas = getCoreAgentsFromConstitution(constitution);
   const rubric = constitution.rubric;
 
   const solutions = await Promise.all(
@@ -248,7 +275,7 @@ export async function runArena(
   const c = constitution ?? createDefaultConstitution();
   let recursiveBattles = 0;
 
-  state.subProblems = detectGaps(planContent);
+  state.subProblems = extractDecisions(planContent);
 
   if (state.subProblems.length === 0) {
     state.synthesis = { decisions: [], revisedPlan: planContent, todoMarkdown: "" };

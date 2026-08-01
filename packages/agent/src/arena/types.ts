@@ -1,19 +1,10 @@
 // No imports — standalone types for the Design Arena.
 
-/** Classification of a sub-problem that may need design debate. */
-export type SubProblemType =
-  | "tech_selection"
-  | "cross_module"
-  | "critical_path"
-  | "unknown";
-
-/** A sub-problem identified by the Gap Detector. */
+/** A sub-problem extracted from a plan's Design Decision sections. */
 export interface SubProblem {
   id: string;
   title: string;
   description: string;
-  type: SubProblemType;
-  uncertainty: "high" | "medium";
   sourceSection: string;
 }
 

@@ -94,7 +94,7 @@ describe("runArena", () => {
     expect(result.state.validation?.valid).toBe(true);
   });
 
-  it("solutions include core agents plus extensions", async () => {
+  it("solutions include all core agents", async () => {
     const provider: LLMProvider = { complete: (p) => Promise.resolve(mockComplete(p)) };
     const result = await runArena(defaultConfig, provider, samplePlan);
 
@@ -104,11 +104,11 @@ describe("runArena", () => {
     expect(personas).toContain("speed");
     expect(personas).toContain("maintain");
     expect(personas).toContain("minimal");
-    expect(personas).toContain("perf");
+    expect(personas).toHaveLength(3);
   });
 
-  it("skips arena when no gaps detected", async () => {
-    const boringPlan = `# Simple Script\n\n## Context\nA one-off script.\n\n## Design Decision: File Format\nUse CSV.\n`;
+  it("skips arena when no design decisions found", async () => {
+    const boringPlan = `# Simple Script\n\n## Context\nA one-off script.\n`;
     const provider: LLMProvider = { complete: () => Promise.resolve("{}") };
     const result = await runArena(defaultConfig, provider, boringPlan);
 

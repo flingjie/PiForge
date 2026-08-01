@@ -24,18 +24,10 @@ export interface RubricDimension {
 export interface AgentPoolEntry {
   /** Persona identifier. */
   persona: string;
-  /** Type: "core" (always dispatched) or "extension" (dispatched by rule). */
+  /** Type: "core" (always dispatched) or "extension" (available but not auto-dispatched). */
   type: "core" | "extension";
   /** Short description of the persona's design philosophy. */
   description: string;
-}
-
-/** A dispatch rule for extension agents. */
-export interface AgentPoolRule {
-  /** Sub-problem type that triggers this extension. */
-  subProblemType: string;
-  /** Personas to add for this sub-problem type. */
-  addPersonas: string[];
 }
 
 /** The complete Design Constitution, as parsed from constitution.md. */
@@ -50,6 +42,4 @@ export interface Constitution {
   rubric: RubricDimension[];
   /** Agent pool entries (core + extension personas). */
   agentPool: AgentPoolEntry[];
-  /** Dispatch rules for extension agents. */
-  agentPoolRules: AgentPoolRule[];
 }

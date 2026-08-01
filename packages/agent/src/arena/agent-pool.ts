@@ -1,4 +1,3 @@
-import type { SubProblem } from "./types.js";
 import type { Constitution } from "../constitution/types.js";
 
 // ---- Constitution-driven agent pool (single source of truth) ----
@@ -7,26 +6,6 @@ export function getCoreAgentsFromConstitution(c: Constitution): string[] {
   return c.agentPool
     .filter((entry) => entry.type === "core")
     .map((entry) => entry.persona);
-}
-
-export function getExtensionsFromConstitution(
-  c: Constitution,
-  type: string,
-): string[] {
-  return c.agentPoolRules
-    .filter((rule) => rule.subProblemType === type)
-    .flatMap((rule) => rule.addPersonas);
-}
-
-export function getAgentsForFromConstitution(
-  c: Constitution,
-  problem: SubProblem,
-): string[] {
-  const agents = new Set<string>([
-    ...getCoreAgentsFromConstitution(c),
-    ...getExtensionsFromConstitution(c, problem.type),
-  ]);
-  return [...agents];
 }
 
 // ---- System Prompts ----

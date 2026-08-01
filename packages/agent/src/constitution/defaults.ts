@@ -29,9 +29,5 @@ export function createDefaultConstitution(): Constitution {
       { persona: "secure", type: "extension", description: "Security and defense in depth" },
       { persona: "scalable", type: "extension", description: "Horizontal scaling and growth" },
     ],
-    agentPoolRules: [
-      { subProblemType: "tech_selection", addPersonas: ["perf"] },
-      { subProblemType: "cross_module", addPersonas: ["scalable"] },
-    ],
   };
 }
