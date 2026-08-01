@@ -5,16 +5,16 @@ description: Use when executing implementation plans with independent tasks in t
 
 # Subagent-Driven Development
 
-Execute plan by dispatching a fresh implementer subagent per task, a task review (spec compliance + code quality) after each, and a broad whole-branch review at the end.
+Execute plan by resolving the dependency graph into concurrent groups, dispatching all nodes in a group in parallel, gating group boundaries with contract test validation, and reviewing each node for spec compliance and code quality.
 
-**Why subagents:** You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. They should never inherit your session's context or history — you construct exactly what they need. This also preserves your own context for coordination work.
+**Why subagents:** You delegate nodes to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their node. They should never inherit your session's context or history — you construct exactly what they need. This also preserves your own context for coordination work.
 
-**Core principle:** Fresh subagent per task + task review (spec + quality) + broad final review = high quality, fast iteration
+**Core principle:** Resolve groups → parallel dispatch within group → contract gate between groups → per-node review (spec + quality) → final broad review = high quality, fast iteration
 
 **Narration:** between tool calls, narrate at most one short line — the
 ledger and the tool results carry the record.
 
-**Continuous execution:** Do not pause to check in with your human partner between tasks. Execute all tasks from the plan without stopping. The only reasons to stop are: BLOCKED status you cannot resolve, ambiguity that genuinely prevents progress, or all tasks complete. "Should I continue?" prompts and progress summaries waste their time — they asked you to execute the plan, so execute it.
+**Continuous execution:** Do not pause to check in with your human partner between nodes. Execute all nodes from the plan without stopping. The only reasons to stop are: BLOCKED status you cannot resolve, ambiguity that genuinely prevents progress, or all groups complete. "Should I continue?" prompts and progress summaries waste their time — they asked you to execute the plan, so execute it.
 
 ## When to Use
 
@@ -38,9 +38,11 @@ digraph when_to_use {
 
 **vs. Executing Plans (parallel session):**
 - Same session (no context switch)
-- Fresh subagent per task (no context pollution)
-- Review after each task (spec compliance + code quality), broad review at the end
-- Faster iteration (no human-in-loop between tasks)
+- Fresh subagent per node (no context pollution)
+- Nodes within a group dispatch in parallel
+- Contract test gate between groups
+- Review after each node (spec compliance + code quality), broad review at the end
+- Faster iteration (parallelism within groups, no human-in-loop between nodes)
 
 ## The Process
 
@@ -125,8 +127,8 @@ a ledger file, not only in todos.
   every artifact for THIS plan: ledger, briefs, reports, review packages.
   Another plan's directory is never yours to read or write.
 - Check for this plan's ledger at `<workspace>/progress.md`. If its first
-  line names your plan file, tasks with a `Task <N>: complete` line are DONE
-  — do not re-dispatch them; resume at the first task without one. A task
+  line names your plan file, nodes with a `Node <N>: complete` line are DONE
+  — do not re-dispatch them; resume at the first node without one. A node
   whose last line is a fix round is mid-loop: resume the loop at the next
   round. A ledger whose first line names a different plan file — or a stray
   ledger at the old flat path `.superpowers/sdd/progress.md` — is another
@@ -139,12 +141,12 @@ a ledger file, not only in todos.
 - `git clean -fdx` will destroy the workspace (it's git-ignored scratch); if
   that happens, recover from `git log`.
 
-Read the plan once, note its context and Global Constraints, and create a
-todo per task.
+Read the plan once, note its context and Global Constraints, parse the
+dependency graph into concurrent groups, and create a todo per node.
 
-Before dispatching Task 1, scan the plan once for conflicts:
+Before dispatching Group 1, scan the plan once for conflicts:
 
-- tasks that contradict each other or the plan's Global Constraints
+- nodes that contradict each other or the plan's Global Constraints
 - anything the plan explicitly mandates that the review rubric treats as a
   defect (a test that asserts nothing, verbatim duplication of a logic block)
 
@@ -186,12 +188,51 @@ When the task's plan text contains the complete code to write, the
 implementation is transcription plus testing: use the cheapest tier for
 that implementer. Single-file mechanical fixes also take the cheapest tier.
 
-**Task complexity signals (implementation tasks):**
+**Task complexity signals (implementation node):**
 - Touches 1-2 files with a complete spec → cheap model
 - Touches multiple files with integration concerns → standard model
 - Requires design judgment or broad codebase understanding → most capable model
 
-## The Task Loop
+## The Group Loop
+
+The plan's dependency graph defines concurrent groups. Nodes on the same
+line have no mutual dependencies — they dispatch in parallel. Groups run
+sequentially.
+
+```
+[1]                    ← Group 1
+[2]  [3]  [4]          ← Group 2
+[5]                    ← Group 3
+```
+
+For each group:
+1. Dispatch all nodes in the group in parallel as independent subagents
+2. Wait for all to complete (any order, each has its own fix loop)
+3. Run the contract test gate (see below)
+4. Proceed to the next group or done
+
+## Contract Test Gate
+
+Between groups, the controller validates that the previous group's contract
+suites all pass before dispatching the next group. This is an optimization —
+it catches contract failures before dependent subagents are dispatched,
+avoiding wasted context.
+
+**How it works:**
+
+1. After all nodes in Group N complete (implement + self-test + review + fix loop), run each node's contract test suite
+2. If all pass → gate clears, proceed to Group N+1
+3. If a node's contract suite fails → that node re-enters its fix loop. Siblings in the same group are unaffected. Gate does not clear until the failing node is fixed
+4. Before any node in Group N+1 starts its own implementation, it runs its dependencies' contract suites as a pre-flight check. This is redundant with the gate but serves as the final safeguard inside the subagent's own context
+5. If a pre-flight check fails, the node reports "Contract violation in Node X" and does not start
+
+**Contract suite rules:**
+- Exported function name: `contractSuite`
+- Tests only the Produces interface — no internal methods or implementation details
+- Self-invoke at bottom of file — the node's own `vitest run` proves the contract
+- Dependent nodes import and run it before starting their own implementation
+
+## Per-Node Implementation
 
 Everything you paste into a dispatch prompt — and everything a subagent
 prints back — stays resident in your context for the rest of the session
@@ -227,7 +268,9 @@ and fix-round diffs need it.
   a pointer to that ledger entry in the dispatch.
 - Record the implementer's agent identity from the dispatch result —
   fix-loop rounds 1-3 resume this agent.
-- Never dispatch multiple implementation subagents in parallel (conflicts).
+- Nodes within a group dispatch in parallel. Each node gets its own BASE
+  recording, brief, and report file. They operate on isolated file paths
+  (the plan's Files field guarantees no overlap within a group).
 
 Template: [implementer-prompt.md](implementer-prompt.md)
 
@@ -307,7 +350,7 @@ finding, or a ⚠️ item you confirmed as a real gap.
 Before the loop starts, two routes leave it immediately:
 
 - Record Minor findings in the progress ledger as you go
-  (`Task <N>: minor (deferred): <one-liner>`), and point the final
+  (`Node <N>: minor (deferred): <one-liner>`), and point the final
   whole-branch review at that list so it can triage which must be fixed
   before merge. A roll-up nobody reads is a silent discard. Minor findings
   never enter the loop.
@@ -350,7 +393,7 @@ findings list. Out-of-scope observations go to the ledger as deferred
 minors — they never extend the loop.
 
 **After each round,** append to the ledger:
-`Task <N>: fix round <R>/5 (<X> addressed, <Y> open — <finding one-liners>; commits <a7>..<b7>)`
+`Node <N>: fix round <R>/5 (<X> addressed, <Y> open — <finding one-liners>; commits <a7>..<b7>)`
 
 Never fix findings yourself in the controller session — your context stays
 clean for coordination, and controller fixes skip review.
@@ -360,12 +403,12 @@ dispatching. Adjudicate each open finding yourself — you hold the plan and
 the cross-task context the reviewer lacks:
 
 - **The reviewer is wrong, or the point is contestable:** park it —
-  `Task <N>: parked — <finding> — ruling: <why the code stands>`. The final
+  `Node <N>: parked — <finding> — ruling: <why the code stands>`. The final
   review sees both sides.
 - **Real, but nothing downstream builds on it:** park it the same way, with
   a ruling that says it's real and deferred.
-- **Real and load-bearing** — a later task builds on it, or it reveals a
-  plan defect: STOP. Append `Task <N>: BLOCKED — <reason>` and report to
+- **Real and load-bearing** — a later node builds on it, or it reveals a
+  plan defect: STOP. Append `Node <N>: BLOCKED — <reason>` and report to
   your human partner with the finding, the plan text it collides with, and
   the fix history. Parking a structural failure lets every dependent task
   build on it and hands the final review a problem it cannot fix either.
@@ -374,19 +417,20 @@ Adjudicate only at the cap. Adjudicating earlier to end a loop is
 pre-judging with a different name. Every adjudication is a ledger entry —
 a silent discard is forbidden.
 
-### 5. Complete the task
+### 5. Complete the node
 
 When the review comes back clean — or every open finding is parked with a
 ruling at the cap — append the completion line to the ledger in the same
 message as your other bookkeeping:
 
-- `Task <N>: complete (commits <base7>..<head7>, review clean)`
-- `Task <N>: complete (commits <base7>..<head7>, <K> parked)` after a
+- `Node <N>: complete (commits <base7>..<head7>, review clean)`
+- `Node <N>: complete (commits <base7>..<head7>, <K> parked)` after a
   tripped breaker
 
-Then mark the todo complete and move on. Never move to the next task while
-the review has open Critical/Important issues that are neither fixed nor
-parked-with-ruling at the cap.
+Then mark the todo complete. All nodes in the group must complete before
+the contract gate runs and the next group dispatches. Never move to the
+next group while any node has open Critical/Important issues that are
+neither fixed nor parked-with-ruling at the cap.
 
 ## Final Review
 
@@ -443,57 +487,84 @@ You: I'm using Subagent-Driven Development to execute this plan.
 [Setup: worktree verified]
 [Read plan file once: docs/superpowers/plans/feature-plan.md]
 [Resolve workspace: scripts/sdd-workspace docs/superpowers/plans/feature-plan.md — no ledger inside, fresh start]
-[Create todos for all tasks]
+[Parse dependency graph: [1] → [2,3,4] → [5]]
+[Groups: G1=[1], G2=[2,3,4], G3=[5]]
+[Create todos for all nodes]
 
-Task 1: Hook installation script
+--- Group 1 ---
 
-[Run task-brief for Task 1; dispatch implementer with brief + report paths + context]
-
-Implementer: "Before I begin - should the hook be installed at user or system level?"
-
-You: "User level (~/.config/superpowers/hooks/)"
-
-Implementer: [Later]
-  - Implemented install-hook command
-  - Added tests, 5/5 passing
-  - Self-review: Found I missed --force flag, added it
-  - Committed
-
-[Run review-package PLAN_FILE BASE HEAD; dispatch task reviewer with the printed path]
-Task reviewer: Spec ✅ - all requirements met, nothing extra.
-  Strengths: Good test coverage, clean. Issues: None. Task quality: Approved.
-
-[Ledger: Task 1: complete (commits a1b2c3d..d4e5f6a, review clean)]
-
-Task 2: Recovery modes
-
-[Run task-brief for Task 2; dispatch implementer with brief + report paths + context]
+Node 1: Hook installation script
+[Run task-brief for Node 1; dispatch implementer with brief + report paths + context]
 
 Implementer: [No questions]
-  - Added verify/repair modes
-  - 8/8 tests passing
+  - Implemented install-hook command
+  - Added tests, 5/5 passing
+  - Contract suite self-test passes
   - Committed
 
-[Run review-package PLAN_FILE BASE HEAD; dispatch task reviewer with the printed path]
-Task reviewer: Spec ❌:
-  - Missing: Progress reporting (spec says "report every 100 items")
-  Issues (Important): Magic number (100)
+[Run review-package PLAN_FILE BASE HEAD; dispatch node reviewer]
+Node reviewer: Spec ✅ - all requirements met. Task quality: Approved.
 
-[Fix round 1: resume the implementer with both findings]
-Implementer: Added progress reporting, extracted PROGRESS_INTERVAL constant.
-  Re-ran test/recovery.test.js — 10/10 passing. Fix report appended.
+[Contract gate: Node 1 contract suite passes]
+[Ledger: Node 1: complete (commits a1b2c3d..d4e5f6a, review clean)]
 
-[Run review-package PLAN_FILE FIX_BASE HEAD; dispatch scoped re-review]
-Re-reviewer: Missing progress reporting — ADDRESSED (src/recovery.js:41).
-  Magic number — ADDRESSED (src/recovery.js:7). New breakage: none.
-  Verdict: all findings addressed.
+--- Group 2 (nodes 2, 3, 4 dispatch in parallel) ---
 
-[Ledger: Task 2: fix round 1/5 (2 addressed, 0 open; commits d4e5f6a..b7c8d9e)]
-[Ledger: Task 2: complete (commits d4e5f6a..b7c8d9e, review clean)]
+Node 2: UserService
+[Run task-brief for Node 2; dispatch implementer]
+Node 3: AuthService
+[Run task-brief for Node 3; dispatch implementer]
+Node 4: ConfigLoader
+[Run task-brief for Node 4; dispatch implementer]
 
-...
+[All three run simultaneously in separate subagent contexts]
 
-[After all tasks]
+Implementer (Node 2):
+  - Created UserService with create/findById
+  - Contract suite exports contractSuite
+  - 6/6 tests passing, committed
+
+Implementer (Node 3):
+  - Created AuthService consuming UserService interface
+  - Pre-flight: ran Node 2's contractSuite — passes
+  - 4/4 tests passing, committed
+
+Implementer (Node 4):
+  - Created ConfigLoader
+  - 3/3 tests passing, committed
+
+[Run review-package for each node; dispatch reviewers in parallel]
+Node 2 reviewer: Spec ✅ Approved.
+Node 3 reviewer: Spec ✅ Approved.
+Node 4 reviewer: Spec ❌ — Missing: env var fallback (spec requires it)
+
+[Node 4 enters fix loop, Nodes 2 and 3 are done]
+[Fix round 1 for Node 4: resume implementer with finding]
+Implementer: Added env var fallback, re-ran tests — 4/4 passing.
+
+[Re-review Node 4]
+Re-reviewer: ADDRESSED. All findings resolved.
+
+[Contract gate: Node 2, 3, 4 contract suites all pass]
+[Ledger: Node 2: complete, Node 3: complete, Node 4: complete (fix round 1/5)]
+
+--- Group 3 ---
+
+Node 5: Main entry point
+[Run task-brief for Node 5; dispatch implementer]
+
+Implementer:
+  - Pre-flight: ran Node 2, 3, 4 contract suites — all pass
+  - Created main entry, wired all services
+  - 7/7 tests passing, committed
+
+[Review: Spec ✅ Approved]
+[Contract gate: Node 5 contract suite passes]
+[Ledger: Node 5: complete]
+
+--- Finish ---
+
+[All groups complete]
 [Run review-package PLAN_FILE MERGE_BASE HEAD; dispatch final code-reviewer, most capable model]
 Final reviewer: All requirements met. Deferred minors triaged: none block merge.
 

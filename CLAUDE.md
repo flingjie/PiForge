@@ -188,16 +188,19 @@ Every plan must include a graph of implementation steps. Two parts: a node table
 **Node Table** — each row is one step:
 
 ```
-| ID | Name          | Files              | Verify          |
-|----|---------------|--------------------|-----------------|
-| 1  | monorepo 骨架 | package.json, tsconfig | npm install |
-| 2  | 核心类型      | graph/types.ts     | tsc --noEmit    |
+| ID | Name | Files | Interfaces | Exit Criteria | Contract Test | Verify | DependsOn |
+|----|------|-------|------------|---------------|---------------|--------|-----------|
+| 1  | 核心类型 | graph/types.ts | Consumes: Logger; Produces: Graph | create() returns Result | test/types.contract.test.ts | npm test | - |
 ```
 
 - **ID**: unique integer. Used for cross-referencing and adjustment ("move 4 before 3").
 - **Name**: 2-4 word label.
 - **Files**: concrete paths to create or modify.
+- **Interfaces**: what this node Consumes (from earlier nodes, with exact signatures) and Produces (for later nodes, with exact signatures).
+- **Exit Criteria**: concrete, falsifiable outcomes the implementation must satisfy — "duplicate email returns UserError.DUPLICATE", not "add error handling".
+- **Contract Test**: path to a test file exporting `contractSuite`. Required for every node whose Interfaces Produces block is consumed by other nodes. Exercises only the Produces interface.
 - **Verify**: the command that proves this step is done (typecheck, test, build).
+- **DependsOn**: list of node IDs this node depends on. Empty = can run in first group.
 
 **Dependency Diagram** — layered ASCII layout. Nodes on the same line have no dependencies on each other and can run concurrently. A node on a lower line depends on all nodes connected from the line above.
 
@@ -225,11 +228,14 @@ G4: [7, 8]
 - Maximize concurrency: if two steps share no dependencies, put them on the same layer
 - A node should take roughly 5-30 minutes — split anything larger
 - Every node has a verify command — no "just write code" steps
+- Nodes that Produce interfaces consumed by other nodes must include a Contract Test
+- Nodes on the same line dispatch in parallel; select model per node based on complexity (cheap for mechanical 1-2 file nodes, mid-tier for integration, capable for design-sensitive)
 
 ### What a good plan looks like
 
 - The dependency graph shows clear concurrent groups — no bottlenecks where 1 node blocks 5 others
 - Each node is independently verifiable
+- Nodes with Produced interfaces include contract tests
 - Covers both the happy path and edge cases
 - Scopes what's out of scope as clearly as what's in
 
@@ -238,8 +244,10 @@ G4: [7, 8]
 After approval:
 1. Create one task per concurrent group (G1→task, G2→task, ...)
 2. Within each group, nodes run in parallel (spawn subagents or fan out writes)
-3. Each node's verify command must pass before marking the group done
-4. If a node fails, fix it before moving to the next group
+3. Contract tests gate group boundaries — Group N+1 not dispatched until Group N's contract suites pass
+4. Each node's verify command must pass before marking the group done
+5. If a node fails, fix it before moving to the next group
+6. Use `subagent-driven-development` for parallel group dispatch; use `executing-plans` for inline sequential execution
 
 ## Git Conventions
 
