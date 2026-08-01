@@ -11,13 +11,14 @@ import type {
 
 const META_VERSION = /^- version:\s*(\d+)/m;
 const META_UPDATED = /^- updated:\s*(.+)/m;
+const UNKNOWN_UPDATED_AT = "unknown";
 
 function parseMetadata(content: string): { version: number; updatedAt: string } {
   const v = content.match(META_VERSION);
   const d = content.match(META_UPDATED);
   return {
     version: v ? parseInt(v[1]!, 10) : 1,
-    updatedAt: d ? d[1]!.trim() : new Date().toISOString().slice(0, 10),
+    updatedAt: d ? d[1]!.trim() : UNKNOWN_UPDATED_AT,
   };
 }
 
@@ -107,7 +108,11 @@ function parseTable<T>(section: string, rowMapper: (cells: string[]) => T): T[] 
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed.startsWith("|")) continue;
+    if (!trimmed.startsWith("|")) {
+      // A non-table line ends the current table; the next table starts fresh.
+      inTable = false;
+      continue;
+    }
 
     // Skip header separator (|---|---|)
     if (/^\|[-|\s]+\|$/.test(trimmed)) {

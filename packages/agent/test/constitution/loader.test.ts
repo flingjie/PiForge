@@ -1,5 +1,16 @@
-import { describe, it, expect } from "vitest";
-import { loadConstitution } from "../../src/constitution/loader.js";
+import { afterEach, describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadConstitution, loadConstitutionFromFile } from "../../src/constitution/loader.js";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 const sampleMd = `# Design Constitution
 
@@ -89,5 +100,47 @@ describe("loadConstitution", () => {
     expect(c.rubric).toHaveLength(0);
     expect(c.agentPool).toHaveLength(0);
     expect(c.agentPoolRules).toHaveLength(0);
+  });
+
+  it("uses a deterministic updatedAt fallback when metadata is missing", () => {
+    const c = loadConstitution(`# Design Constitution
+
+## Metadata
+- version: 1
+`);
+    expect(c.updatedAt).toBe("unknown");
+  });
+
+  it("parses multiple tables within a single section independently", () => {
+    const md = `# Design Constitution
+
+## Rubric
+| Key | Label | Weight | Description |
+|-----|-------|--------|-------------|
+| decoupling | Decoupling | 20 | Module independence |
+
+| performance | Performance | 10 | Throughput and latency |
+|--------------|-------------|-----|------------------------|
+| correctness | Correctness | 15 | Produces right results |
+`;
+    const c = loadConstitution(md);
+    expect(c.rubric).toHaveLength(2);
+    expect(c.rubric[0]).toMatchObject({ key: "decoupling", defaultWeight: 20 });
+    expect(c.rubric[1]).toMatchObject({ key: "correctness", defaultWeight: 15 });
+  });
+
+  it("loads a constitution from a file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "constitution-"));
+    tempDirs.push(dir);
+    const path = join(dir, "constitution.md");
+    writeFileSync(path, sampleMd, "utf-8");
+
+    const c = loadConstitutionFromFile(path);
+    expect(c.version).toBe(1);
+    expect(c.updatedAt).toBe("2026-07-31");
+    expect(c.principles).toHaveLength(2);
+    expect(c.rubric).toHaveLength(3);
+    expect(c.agentPool).toHaveLength(3);
+    expect(c.agentPoolRules).toHaveLength(2);
   });
 });

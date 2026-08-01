@@ -1,10 +1,23 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
+import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createProposal,
   applyProposal,
   serializeProposal,
+  writeProposal,
+  readProposals,
 } from "../../src/constitution/proposals.js";
 import type { Constitution } from "../../src/constitution/types.js";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 const sampleConstitution: Constitution = {
   version: 1,
@@ -83,5 +96,54 @@ describe("serializeProposal", () => {
     expect(md).toContain("security");
     expect(md).toContain("arena-1");
     expect(md).toContain("proposed");
+  });
+});
+
+describe("writeProposal / readProposals", () => {
+  function tempProposalsPath(): string {
+    const dir = mkdtempSync(join(tmpdir(), "proposals-"));
+    tempDirs.push(dir);
+    return join(dir, "proposals.jsonl");
+  }
+
+  it("writes and reads back the same proposal (roundtrip)", () => {
+    const path = tempProposalsPath();
+    const p = createProposal("rubric", "add", { key: "security", defaultWeight: 10 }, "Need security", "arena-1");
+
+    writeProposal(p, path);
+    const read = readProposals(path);
+
+    expect(read).toEqual([p]);
+  });
+
+  it("appends multiple proposals without overwriting", () => {
+    const path = tempProposalsPath();
+    const p1 = createProposal("principle", "add", { statement: "Test > Skip" }, "Because", "arena-1");
+    const p2 = createProposal("agent_pool", "add", { persona: "security", type: "extension" }, "Need persona", "arena-2");
+
+    writeProposal(p1, path);
+    writeProposal(p2, path);
+
+    const read = readProposals(path);
+    expect(read).toHaveLength(2);
+    expect(read[0]?.id).toBe(p1.id);
+    expect(read[1]?.id).toBe(p2.id);
+  });
+
+  it("skips unparseable lines", () => {
+    const path = tempProposalsPath();
+    const p = createProposal("rubric", "modify", { key: "decoupling", defaultWeight: 25 }, "Re-weight", "arena-1");
+
+    writeProposal(p, path);
+    appendFileSync(path, "not valid json\n", "utf-8");
+
+    const read = readProposals(path);
+    expect(read).toEqual([p]);
+  });
+
+  it("returns an empty list for a missing file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "proposals-missing-"));
+    tempDirs.push(dir);
+    expect(readProposals(join(dir, "does-not-exist.jsonl"))).toEqual([]);
   });
 });

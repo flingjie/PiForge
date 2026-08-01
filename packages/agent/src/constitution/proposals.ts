@@ -1,3 +1,4 @@
+import { appendFileSync, readFileSync } from "node:fs";
 import type { AmendmentProposal, Constitution } from "./types.js";
 
 let proposalCounter = 0;
@@ -143,4 +144,40 @@ export function serializeProposal(proposal: AmendmentProposal): string {
     "```",
   ];
   return lines.join("\n");
+}
+
+/**
+ * Append a serialized proposal to the proposals file (append-only, one JSON
+ * object per line, like .jsonl).
+ */
+export function writeProposal(proposal: AmendmentProposal, proposalsPath: string): void {
+  appendFileSync(proposalsPath, `${JSON.stringify(proposal)}\n`, "utf-8");
+}
+
+/**
+ * Read all proposals persisted by writeProposal. Lines that fail to parse are
+ * skipped so a corrupted entry never breaks the whole file.
+ */
+export function readProposals(proposalsPath: string): AmendmentProposal[] {
+  let content: string;
+  try {
+    content = readFileSync(proposalsPath, "utf-8");
+  } catch {
+    return [];
+  }
+
+  const proposals: AmendmentProposal[] = [];
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as AmendmentProposal;
+      if (parsed && typeof parsed.id === "string" && typeof parsed.target === "string") {
+        proposals.push(parsed);
+      }
+    } catch {
+      // Skip unparseable lines.
+    }
+  }
+  return proposals;
 }
