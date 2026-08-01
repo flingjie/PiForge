@@ -51,3 +51,24 @@ export { abilityLensNode } from "./reflection/nodes/ability-lens.js";
 export { patternLensNode } from "./reflection/nodes/pattern-lens.js";
 export { adversaryNode } from "./reflection/nodes/adversary.js";
 export { synthesizeNode } from "./reflection/nodes/synthesize.js";
+
+// Design Arena.
+export type {
+  SubProblem,
+  SubProblemType,
+  AgentPersona,
+  Solution,
+  Critique,
+  CritiqueResult,
+  FusedDecision,
+  SynthesisResult,
+  ValidationResult,
+  ArenaConfig,
+  ArenaState,
+  AgentProvider,
+  ArenaResult,
+} from "./arena/types.js";
+export { getCoreAgents, getExtensions, getAgentsFor, AGENT_SYSTEM_PROMPTS } from "./arena/agent-pool.js";
+export { detectGaps } from "./arena/gap-detector.js";
+export { validateDesign } from "./arena/validator.js";
+export { runArena } from "./arena/orchestrator.js";
