@@ -20,11 +20,6 @@ We need to choose a database for storing user credentials and session tokens.
 const defaultConfig: ArenaConfig = {
   maxDepth: 2,
   maxCritiqueCycles: 1,
-  rubric: {
-    decoupling: 20, maintainability: 20, extensibility: 15,
-    testability: 15, performance: 10, observability: 10,
-    complexity: 5, ai_friendliness: 5,
-  },
 };
 
 function mockComplete(prompt: string, hints: { firstCritique?: boolean } = {}): string {
@@ -72,13 +67,16 @@ G1: [1]`;
     prompt.includes('"maintain"') ? "maintain" :
     prompt.includes('"minimal"') ? "minimal" : "perf";
 
-  const scores: Record<string, number> = {};
-  for (const k of Object.keys(defaultConfig.rubric)) {
-    if (k === "maintainability" && persona === "maintain") scores[k] = 85;
-    else if (k === "performance" && persona === "perf") scores[k] = 90;
-    else if (k === "complexity" && persona === "minimal") scores[k] = 95;
-    else scores[k] = persona === "maintain" ? 70 : 60;
-  }
+  const scores: Record<string, number> = {
+    decoupling: persona === "maintain" ? 80 : 60,
+    maintainability: persona === "maintain" ? 85 : 60,
+    extensibility: 60,
+    testability: persona === "minimal" ? 75 : 60,
+    performance: persona === "perf" ? 90 : 60,
+    observability: 60,
+    complexity: persona === "minimal" ? 95 : 60,
+    ai_friendliness: 60,
+  };
 
   return JSON.stringify({ persona, problemId: "gap-1", proposal: `${persona} approach.`, scores, rationale: `${persona} is best.` });
 }

@@ -10,7 +10,7 @@ import type {
   CritiqueResult,
   FusedDecision,
 } from "./types.js";
-import type { Constitution } from "../constitution/types.js";
+import type { Constitution, RubricDimension } from "../constitution/types.js";
 import { detectGaps } from "./gap-detector.js";
 import { getAgentsForFromConstitution, AGENT_SYSTEM_PROMPTS, CRITIC_PROMPT, SYNTHESIZER_PROMPT, SYNTHESIZE_ALL_PROMPT } from "./agent-pool.js";
 import { createDefaultConstitution } from "../constitution/defaults.js";
@@ -33,15 +33,14 @@ async function complete(provider: LLMProvider, prompt: string): Promise<string> 
     JSON.parse(extractJSON(response));
     return response;
   } catch {
-    // Retry once with feedback
     return provider.complete(
       prompt + "\n\nYour previous response was not valid JSON. Return ONLY a valid JSON object.",
     );
   }
 }
 
-function formatRubric(rubric: Record<string, number>): string {
-  return Object.entries(rubric).map(([k, v]) => `  - ${k}: ${v}`).join("\n");
+function formatRubric(dimensions: RubricDimension[]): string {
+  return dimensions.map((d) => `  - ${d.key}: ${d.defaultWeight} (${d.label})\n    ${d.description}`).join("\n");
 }
 
 // ---- Solution generation ----
@@ -50,10 +49,12 @@ function buildSolutionPrompt(
   problem: SubProblem,
   persona: string,
   plan: string,
-  rubric: Record<string, number>,
+  rubric: RubricDimension[],
 ): string {
   const system = AGENT_SYSTEM_PROMPTS[persona] ??
     `You are a Design Architect with a "${persona}" philosophy.`;
+
+  const dimKeys = rubric.map((d) => d.key);
 
   return `${system}
 
@@ -71,7 +72,7 @@ Return ONLY valid JSON:
   "persona": "${persona}",
   "problemId": "${problem.id}",
   "proposal": "<your approach, 2-3 paragraphs>",
-  "scores": { ${Object.keys(rubric).map((k) => `"${k}": <0-100>`).join(", ")} },
+  "scores": { ${dimKeys.map((k) => `"${k}": <0-100>`).join(", ")} },
   "rationale": "<why this approach>"
 }`;
 }
@@ -121,7 +122,7 @@ function buildSynthesizePrompt(
   problem: SubProblem,
   solutions: Solution[],
   critique: CritiqueResult,
-  rubric: Record<string, number>,
+  rubric: RubricDimension[],
 ): string {
   return `${SYNTHESIZER_PROMPT}
 
@@ -189,24 +190,22 @@ async function battleSubProblem(
   constitution: Constitution,
 ): Promise<void> {
   const personas = getAgentsForFromConstitution(constitution, problem);
+  const rubric = constitution.rubric;
 
-  // Round 1: Generate solutions in parallel
   const solutions = await Promise.all(
     personas.map(async (persona) => {
-      const prompt = buildSolutionPrompt(problem, persona, state.originalPlan, state.config.rubric);
+      const prompt = buildSolutionPrompt(problem, persona, state.originalPlan, rubric);
       const raw = await complete(provider, prompt);
       return parseSolution(raw, persona, problem.id);
     }),
   );
   state.solutions.set(problem.id, solutions);
 
-  // Critique
   let critique = parseCritique(
     await complete(provider, buildCritiquePrompt(problem, solutions)),
     problem.id,
   );
 
-  // Recursive battle
   let cycleCount = 0;
   while (critique.needsMoreDebate && cycleCount < state.config.maxCritiqueCycles) {
     cycleCount++;
@@ -220,7 +219,7 @@ async function battleSubProblem(
 
     const deeper = await Promise.all(
       personas.map(async (persona) => {
-        const prompt = buildSolutionPrompt(deepProblem, persona, state.originalPlan, state.config.rubric);
+        const prompt = buildSolutionPrompt(deepProblem, persona, state.originalPlan, rubric);
         const raw = await complete(provider, prompt);
         return parseSolution(raw, persona, problem.id);
       }),
@@ -262,18 +261,16 @@ export async function runArena(
     if (state.currentDepth > 0) recursiveBattles++;
   }
 
-  // Synthesize per problem
   const decisions = await Promise.all(
     state.subProblems.map(async (problem) => {
       const solutions = state.solutions.get(problem.id) ?? [];
       const critique = state.critiques.get(problem.id);
       if (!critique) throw new Error(`Missing critique for ${problem.id}`);
-      const raw = await complete(provider, buildSynthesizePrompt(problem, solutions, critique, state.config.rubric));
+      const raw = await complete(provider, buildSynthesizePrompt(problem, solutions, critique, c.rubric));
       return parseSynthesize(raw, problem.id, problem.title);
     }),
   );
 
-  // Synthesize all
   const synthRaw = await complete(provider, buildSynthesizeAllPrompt(state.originalPlan, decisions));
   const synth = parseSynthesizeAll(synthRaw);
 

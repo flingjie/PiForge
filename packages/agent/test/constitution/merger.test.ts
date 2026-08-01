@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergeRubric, toArenaConfig } from "../../src/constitution/merger.js";
+import { mergeRubric } from "../../src/constitution/merger.js";
 import type { Constitution, RubricOverride } from "../../src/constitution/types.js";
 
 const sampleConstitution: Constitution = {
@@ -52,25 +52,5 @@ describe("mergeRubric", () => {
     const orig = sampleConstitution.rubric[0]!.defaultWeight;
     mergeRubric(sampleConstitution, [{ dimensionKey: "decoupling", weight: 99 }]);
     expect(sampleConstitution.rubric[0]!.defaultWeight).toBe(orig);
-  });
-});
-
-describe("toArenaConfig", () => {
-  it("converts to ArenaConfig with rubric weights", () => {
-    const config = toArenaConfig(sampleConstitution);
-    expect(config.rubric).toEqual({
-      decoupling: 20,
-      maintainability: 20,
-      performance: 10,
-    });
-    expect(config.maxDepth).toBe(3);
-    expect(config.maxCritiqueCycles).toBe(2);
-  });
-
-  it("applies overrides", () => {
-    const config = toArenaConfig(sampleConstitution, [
-      { dimensionKey: "performance", weight: 30 },
-    ]);
-    expect(config.rubric["performance"]).toBe(30);
   });
 });

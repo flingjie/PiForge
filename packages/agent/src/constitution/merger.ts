@@ -1,5 +1,4 @@
 import type { Constitution, RubricDimension, RubricOverride } from "./types.js";
-import type { ArenaConfig } from "../arena/types.js";
 
 export function mergeRubric(
   constitution: Constitution,
@@ -17,21 +16,4 @@ export function mergeRubric(
     }
     return { ...dim };
   });
-}
-
-export function toArenaConfig(
-  constitution: Constitution,
-  overrides: RubricOverride[] = [],
-): ArenaConfig {
-  const merged = mergeRubric(constitution, overrides);
-  const rubric: Record<string, number> = {};
-  for (const dim of merged) {
-    rubric[dim.key] = dim.defaultWeight;
-  }
-
-  return {
-    maxDepth: 3,
-    maxCritiqueCycles: 2,
-    rubric,
-  };
 }

@@ -43,7 +43,7 @@ describe("Design Arena E2E", () => {
     expect(gaps.length).toBeGreaterThanOrEqual(1);
     for (const gap of gaps) expect(getAgentsForFromConstitution(defaultConstitution, gap).length).toBeGreaterThanOrEqual(3);
 
-    const config: ArenaConfig = { maxDepth: 2, maxCritiqueCycles: 1, rubric: { simplicity: 50, maintainability: 50 } };
+    const config: ArenaConfig = { maxDepth: 2, maxCritiqueCycles: 1 };
     const provider: LLMProvider = { complete: (p) => Promise.resolve(mockComplete(p)) };
     const result = await runArena(config, provider, samplePlan);
 

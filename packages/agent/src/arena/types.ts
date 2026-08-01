@@ -63,7 +63,6 @@ export interface ValidationResult {
 export interface ArenaConfig {
   maxDepth: number;
   maxCritiqueCycles: number;
-  rubric: Record<string, number>;
   outputDir?: string;
 }
 
