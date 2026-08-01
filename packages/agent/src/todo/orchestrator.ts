@@ -175,12 +175,16 @@ export async function runOrchestrator(
 export async function runOrchestratorFromMarkdown(
   todoMarkdown: string,
   executor: NodeExecutor,
+  options?: { maxRetries?: number },
 ): Promise<ExecutionReport> {
   const dir = mkdtempSync(join(tmpdir(), "piforge-todo-"));
   const todoPath = join(dir, "todo.md");
   try {
     writeFileSync(todoPath, todoMarkdown, "utf-8");
-    return await runOrchestrator({ maxRetries: 0, todoPath }, executor);
+    return await runOrchestrator(
+      { maxRetries: options?.maxRetries ?? 0, todoPath },
+      executor,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

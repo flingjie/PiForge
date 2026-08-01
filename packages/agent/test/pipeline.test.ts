@@ -4,9 +4,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   createDefaultConstitution,
+  createLLMProvider,
   runArena,
   runOrchestratorFromMarkdown,
 } from "../src/index.js";
+import { runPipeline } from "../src/pipeline.js";
 import type {
   ArenaConfig,
   LLMProvider,
@@ -161,5 +163,24 @@ describe("Arena → TODO Graph → Orchestrator pipeline", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("runs the full pipeline via runPipeline with provider factories", async () => {
+    const executor: NodeExecutor = async (node) => ({
+      output: `created ${node.files.join(", ")}`,
+    });
+
+    const result = await runPipeline({
+      plan,
+      llm: createLLMProvider((p) => Promise.resolve(mockComplete(p))),
+      executor,
+    });
+
+    expect(result.arenaResult.state.status).toBe("completed");
+    expect(result.revisedPlan).toContain("Arena Decision");
+    expect(result.todoMarkdown).toContain("## Node Table");
+    expect(result.report.completed).toBeGreaterThan(0);
+    expect(result.report.failed).toBe(0);
+    expect(result.report.skipped).toBe(0);
   });
 });
