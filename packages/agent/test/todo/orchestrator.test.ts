@@ -192,4 +192,36 @@ G3: [2]
     expect(report.failed).toBe(0);
     expect(report.skipped).toBe(0);
   });
+
+  it("dry-run parses and validates without executing", async () => {
+    let executed = 0;
+    const executor: NodeExecutor = async (node) => {
+      executed++;
+      return { output: node.name };
+    };
+
+    const report = await runOrchestrator(
+      { maxRetries: 0, todoPath: TEST_TODO, dryRun: true },
+      executor,
+    );
+
+    expect(executed).toBe(0);
+    expect(report.totalNodes).toBe(4);
+    expect(report.completed).toBe(4);
+    expect(report.failed).toBe(0);
+    expect(report.skipped).toBe(0);
+    expect(report.durationMs).toBe(0);
+    expect(report.note).toContain("dry-run");
+    for (const node of report.nodes) {
+      expect(node.status).toBe("success");
+      expect(node.durationMs).toBe(0);
+      expect(node.output).toBeNull();
+    }
+
+    // The file is untouched — every node is still pending.
+    const { readFileSync } = await import("node:fs");
+    const content = readFileSync(TEST_TODO, "utf-8");
+    expect(content).toContain("pending");
+    expect(content).not.toContain("completed");
+  });
 });

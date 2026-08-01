@@ -168,6 +168,11 @@ Use CSV for input and output.
     expect(result.state.subProblems).toHaveLength(0);
     // No gaps → completes immediately with original plan unchanged
     expect(result.state.status).toBe("completed");
+    // Synthesis is still populated so callers can always read .revisedPlan
+    expect(result.state.synthesis).not.toBeNull();
+    expect(result.state.synthesis?.revisedPlan).toBe(boringPlan);
+    expect(result.state.synthesis?.decisions).toHaveLength(0);
+    expect(result.state.synthesis?.todoMarkdown).toBe("");
   });
 
   it("records duration", async () => {

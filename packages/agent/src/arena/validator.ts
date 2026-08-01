@@ -1,4 +1,6 @@
 import type { ValidationResult } from "./types.js";
+import type { TodoGraph } from "../todo/types.js";
+import { parseTodoGraph } from "../todo/parser.js";
 
 // Match file paths like "packages/core/src/a.ts" or "auth/handler.ts"
 const FILE_PATH_RE = /[\w./-]+\.(ts|tsx|js|jsx|json|md)/g;
@@ -12,51 +14,9 @@ function extractFilesFromPlan(plan: string): Set<string> {
   return files;
 }
 
-function extractFilesFromTodo(todoMarkdown: string): Set<string> {
-  const files = new Set<string>();
-  // Parse the node table to extract file paths
-  const rowRegex = /^\|\s*\d+\s+\|.+?\|\s*([^|]+?)\s*\|/gm;
-  let match: RegExpExecArray | null;
-  while ((match = rowRegex.exec(todoMarkdown)) !== null) {
-    const filesCell = match[1]!;
-    for (const f of filesCell.split(",")) {
-      const trimmed = f.trim();
-      if (trimmed) files.add(trimmed);
-    }
-  }
-  return files;
-}
-
 interface DepEdge {
   from: number;
   to: number;
-}
-
-function extractDependencies(todoMarkdown: string): { nodes: Set<number>; edges: DepEdge[] } {
-  const nodes = new Set<number>();
-  const edges: DepEdge[] = [];
-  const rowRegex = /^\|\s*(\d+)\s+\|.+?\|\s*(.+?)\s*\|$/gm;
-  let match: RegExpExecArray | null;
-
-  while ((match = rowRegex.exec(todoMarkdown)) !== null) {
-    const id = parseInt(match[1]!, 10);
-    nodes.add(id);
-    // The fifth cell is DependsOn
-    const cells = match[0].split("|").map((c) => c.trim());
-    // Row: | ID | Name | Files | Verify | DependsOn | Status |
-    // cells: ["", ID, Name, Files, Verify, DependsOn, Status, ""]
-    const dependsOnCell = cells[5];
-    if (dependsOnCell && dependsOnCell !== "-") {
-      for (const dep of dependsOnCell.split(",")) {
-        const depId = parseInt(dep.trim(), 10);
-        if (!isNaN(depId)) {
-          edges.push({ from: depId, to: id });
-        }
-      }
-    }
-  }
-
-  return { nodes, edges };
 }
 
 function hasCycle(nodes: Set<number>, edges: DepEdge[]): boolean {
@@ -87,9 +47,22 @@ export function validateDesign(plan: string, todoMarkdown: string): ValidationRe
   const errors: Array<{ location: string; message: string }> = [];
   const warnings: string[] = [];
 
-  // 1. Check file references: plan → todo consistency
+  // 1. Parse the TODO graph using the canonical parser.
+  let todoGraph: TodoGraph;
+  try {
+    todoGraph = parseTodoGraph(todoMarkdown);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    errors.push({
+      location: "todo graph",
+      message: `Failed to parse TODO graph: ${message}`,
+    });
+    return { valid: false, errors, warnings };
+  }
+
+  // 2. Check file references: plan → todo consistency
   const planFiles = extractFilesFromPlan(plan);
-  const todoFiles = extractFilesFromTodo(todoMarkdown);
+  const todoFiles = new Set(todoGraph.nodes.flatMap((n) => n.files));
 
   for (const f of planFiles) {
     if (!todoFiles.has(f) && f.includes("/src/")) {
@@ -97,13 +70,20 @@ export function validateDesign(plan: string, todoMarkdown: string): ValidationRe
     }
   }
 
-  // 2. Check for empty todo
-  const { nodes, edges } = extractDependencies(todoMarkdown);
-  if (nodes.size === 0) {
+  // 3. Check for empty todo
+  if (todoGraph.nodes.length === 0) {
     warnings.push("TODO graph has no nodes");
   }
 
-  // 3. Check for dependency cycles
+  // 4. Check for dependency cycles
+  const nodes = new Set(todoGraph.nodes.map((n) => n.id));
+  const edges: DepEdge[] = [];
+  for (const node of todoGraph.nodes) {
+    for (const dep of node.dependsOn) {
+      edges.push({ from: dep, to: node.id });
+    }
+  }
+
   if (hasCycle(nodes, edges)) {
     errors.push({
       location: "todo dependency graph",

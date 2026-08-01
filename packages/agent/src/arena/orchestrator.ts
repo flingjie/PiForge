@@ -96,6 +96,11 @@ export async function runArena(
   state.subProblems = detectGaps(planContent);
 
   if (state.subProblems.length === 0) {
+    state.synthesis = {
+      decisions: [],
+      revisedPlan: planContent,
+      todoMarkdown: "", // empty — no tasks generated since no gaps
+    };
     state.status = "completed";
     return {
       state,

@@ -25,6 +25,8 @@ export interface TodoConfig {
   maxRetries: number;
   /** Absolute path to the todo.md file. */
   todoPath: string;
+  /** When true, parse and validate the graph without executing any nodes. */
+  dryRun?: boolean;
 }
 
 /** Result of a single node execution. */
@@ -49,4 +51,6 @@ export interface ExecutionReport {
   skipped: number;
   nodes: TodoNodeResult[];
   durationMs: number;
+  /** Optional human-readable note about the run (e.g. dry-run). */
+  note?: string;
 }

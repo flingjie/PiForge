@@ -93,4 +93,4 @@ export type {
 } from "./constitution/types.js";
 export { loadConstitution, loadConstitutionFromFile } from "./constitution/loader.js";
 export { mergeRubric, toArenaConfig } from "./constitution/merger.js";
-export { createProposal, applyProposal, serializeProposal } from "./constitution/proposals.js";
+export { createProposal, applyProposal, serializeProposal, writeProposal, readProposals } from "./constitution/proposals.js";

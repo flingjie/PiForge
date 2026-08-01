@@ -55,10 +55,14 @@ G1: [1, 2]
 `;
     const result = validateDesign(validPlan, cyclicTodo);
     expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.message.includes("cycle"))).toBe(true);
+    // The canonical parser rejects the mutual dependency: a cycle cannot be
+    // ordered into strictly earlier groups.
+    expect(result.errors.some((e) => e.message.includes("depends on node"))).toBe(
+      true,
+    );
   });
 
-  it("warns on empty todo", () => {
+  it("flags an empty todo as invalid", () => {
     const emptyTodo = `# TODO: test
 
 ## Node Table
@@ -68,7 +72,8 @@ G1: [1, 2]
 ## Concurrent Groups
 `;
     const result = validateDesign(validPlan, emptyTodo);
-    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.valid).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
   });
 
   it("passes when todo has no dependency cycles (valid DAG)", () => {

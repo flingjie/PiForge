@@ -71,6 +71,29 @@ export async function runOrchestrator(
 ): Promise<ExecutionReport> {
   const content = readFileSync(config.todoPath, "utf-8");
   const graph = parseTodoGraph(content);
+
+  // Dry-run: parse and validate the graph (parseTodoGraph validates groups and
+  // dependency ordering), but execute nothing and leave the file untouched.
+  if (config.dryRun) {
+    const nodes: TodoNodeResult[] = graph.nodes.map((node) => ({
+      nodeId: node.id,
+      nodeName: node.name,
+      status: "success",
+      output: null,
+      durationMs: 0,
+      retryCount: 0,
+    }));
+    return {
+      totalNodes: nodes.length,
+      completed: nodes.length,
+      failed: 0,
+      skipped: 0,
+      nodes,
+      durationMs: 0,
+      note: "dry-run: graph parsed and validated; no nodes were executed",
+    };
+  }
+
   const results: TodoNodeResult[] = [];
   const failedIds = new Set<number>();
   const startTime = Date.now();
