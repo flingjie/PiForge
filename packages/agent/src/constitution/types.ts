@@ -53,31 +53,3 @@ export interface Constitution {
   /** Dispatch rules for extension agents. */
   agentPoolRules: AgentPoolRule[];
 }
-
-/** A weight override for a single rubric dimension, from a Plan. */
-export interface RubricOverride {
-  /** Which dimension key to override. */
-  dimensionKey: string;
-  /** New weight to apply. */
-  weight: number;
-}
-
-/** A proposed amendment to the Constitution. */
-export interface AmendmentProposal {
-  /** Unique proposal ID. */
-  id: string;
-  /** When this proposal was created. */
-  proposedAt: string;
-  /** What is being changed. */
-  target: "principle" | "rubric" | "agent_pool" | "agent_rule";
-  /** "add", "modify", or "remove". */
-  action: "add" | "modify" | "remove";
-  /** The proposed change, as a JSON-serializable value. */
-  change: Record<string, unknown>;
-  /** Why this change is proposed. */
-  rationale: string;
-  /** The Arena run that generated this proposal. */
-  source: string;
-  /** Current status. */
-  status: "proposed" | "accepted" | "rejected";
-}

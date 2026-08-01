@@ -48,10 +48,5 @@ export type {
   AgentPoolEntry,
   AgentPoolRule,
   Constitution,
-  RubricOverride,
-  AmendmentProposal,
 } from "./constitution/types.js";
-export { loadConstitution, loadConstitutionFromFile } from "./constitution/loader.js";
-export { mergeRubric } from "./constitution/merger.js";
 export { createDefaultConstitution } from "./constitution/defaults.js";
-export { createProposal, applyProposal, serializeProposal, writeProposal, readProposals } from "./constitution/proposals.js";
