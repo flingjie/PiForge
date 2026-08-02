@@ -37,6 +37,7 @@ export {
 } from "./arena/agent-pool.js";
 export { runArena } from "./arena/orchestrator.js";
 export { suggestPerspectives } from "./arena/perspectives.js";
+export { formatDebateSummary } from "./arena/debate-summary.js";
 export { createLLMProvider, createCLILLMProvider } from "./arena/llm-provider.js";
 
 // Design Constitution.
