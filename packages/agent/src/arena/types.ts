@@ -73,3 +73,17 @@ export interface ArenaResult {
   recursiveBattles: number;
   durationMs: number;
 }
+
+/** A suggested reviewer perspective for a decision point. */
+export interface PerspectiveSuggestion {
+  persona: string;
+  reason: string;
+}
+
+/** LLM-generated perspective suggestions for a set of decision points. */
+export interface PerspectivesResult {
+  suggestions: Array<{
+    decision: string;
+    perspectives: PerspectiveSuggestion[];
+  }>;
+}

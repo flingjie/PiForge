@@ -24,6 +24,8 @@ export type {
   ArenaConfig,
   ArenaState,
   LLMProvider,
+  PerspectiveSuggestion,
+  PerspectivesResult,
   ArenaResult,
 } from "./arena/types.js";
 export {
@@ -34,6 +36,7 @@ export {
   SYNTHESIZE_ALL_PROMPT,
 } from "./arena/agent-pool.js";
 export { runArena } from "./arena/orchestrator.js";
+export { suggestPerspectives } from "./arena/perspectives.js";
 export { createLLMProvider, createCLILLMProvider } from "./arena/llm-provider.js";
 
 // Design Constitution.
