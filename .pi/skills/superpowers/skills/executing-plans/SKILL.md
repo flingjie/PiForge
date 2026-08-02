@@ -24,6 +24,8 @@ Load plan, review critically, execute all tasks, report when complete.
 
 ### Step 2: Execute Tasks
 
+Before executing, match each task to a persona from `state/constitution.md` Agent Pool based on task nature: mechanical edits → speed, cross-module → scalable, decoupling/refactoring → maintain, deleting/simplifying → minimal, parallel groups → parallel. Add a persona hint when dispatching: "Approach this as a `<persona>` task." For tasks without a clear match, omit.
+
 For each task:
 1. Mark as in_progress
 2. Follow each step exactly (plan has bite-sized steps)

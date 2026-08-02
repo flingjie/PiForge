@@ -193,6 +193,18 @@ that implementer. Single-file mechanical fixes also take the cheapest tier.
 - Touches multiple files with integration concerns → standard model
 - Requires design judgment or broad codebase understanding → most capable model
 
+**Persona Matching (from constitution Agent Pool):** When dispatching a subagent, include a persona hint based on task nature. This is a style suggestion, not a constraint — the subagent still follows the task brief exactly.
+
+| Task Nature | Persona Hint |
+|-------------|-------------|
+| Mechanical edits (rename, reformat, single-file changes) | `speed` — prefer speed over abstraction |
+| Cross-module integration, shared interfaces | `scalable` — design for horizontal growth |
+| Decoupling, refactoring, dependency analysis | `maintain` — module boundaries matter |
+| Deleting code, simplifying, removing features | `minimal` — delete more than you add |
+| Parallel task groups, independent work streams | `parallel` — maximize concurrency |
+
+Add the persona hint to the dispatch: "Approach this as a `<persona>` task." For tasks matching none of the above, omit.
+
 ## The Group Loop
 
 The plan's dependency graph defines concurrent groups. Nodes on the same

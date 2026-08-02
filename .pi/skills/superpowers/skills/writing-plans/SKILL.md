@@ -170,6 +170,12 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no node, add the node.
 
+## Rubric Self-Score
+
+After self-review, score the plan against `.pi/rubric-checklist.md`. Fill in the Scoring Summary table in the checklist file (or inline in the plan). The plan must score >= "ok" on all 9 dimensions before presenting the Test Strategy Review Gate. If any dimension scores "poor", revise the plan and re-score.
+
+Reference the checklist: `.pi/rubric-checklist.md` contains the full 9-dimension rubric with poor/ok/good criteria.
+
 ## Test Strategy Review Gate
 
 After self-review passes, present the test strategy to the user for confirmation

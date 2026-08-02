@@ -144,6 +144,8 @@ Add an `## Arena Decisions` appendix summarizing all resolutions.
 
 **2. TODO Execution Graph** — break the revised plan into a dependency-ordered task graph:
 
+**3. Decision Records** — for each synthesis decision, save a decision record to `state/decisions/YYYY-MM-DD-<slug>.json` using the template at `state/decisions/TEMPLATE.md`. Each record captures: options considered, chosen approach with rationale, rubric scores, confidence, and a falsifiable expected outcome.
+
 ```
 # TODO: auth-module
 
@@ -220,6 +222,10 @@ console.log('Completed:', result.problemsBattled, 'decisions in', result.duratio
 
 This uses the `@piforge/agent` library directly with real API calls. Useful when the user
 wants truly independent agent outputs (not simulated by the same LLM).
+
+## Rubric Checklist
+
+During Step 2 scoring and Step 3 critique, use the project's rubric checklist at `.pi/rubric-checklist.md` for dimension definitions and scoring criteria. If the file exists, use its 9 dimensions and weights. If missing, fall back to the default constitution rubric below.
 
 ## Reference: Default Constitution
 

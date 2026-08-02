@@ -10,3 +10,5 @@ Ask the questions one at a time, waiting for feedback on each question before co
 If a *fact* can be found by exploring the environment (filesystem, tools, etc.), look it up rather than asking me. The *decisions*, though, are mine — put each one to me and wait for my answer.
 
 Do not act on it until I confirm we have reached a shared understanding.
+
+When all decisions are resolved and confirmed, record each key decision to `state/decisions/YYYY-MM-DD-<slug>.json` using the template at `state/decisions/TEMPLATE.md`. Each decision record must include: all options considered (including rejected ones), the chosen option with rationale, confidence level, and a falsifiable expected outcome.

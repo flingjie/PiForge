@@ -97,12 +97,57 @@ cd packages/agent && npx vitest
 - No fluff or cheerful filler
 - Answer the user's question before making edits
 
+## Decision Pipeline
+
+For non-trivial tasks, follow this phased pipeline. Each phase has clear entry/exit criteria. Skip a phase only with explicit justification.
+
+### Phase 0: Understand
+- **Trigger:** Any task with ambiguity, unclear scope, or multiple valid interpretations.
+- **Action:** Ask clarifying questions. Restate the problem in your own words and confirm with user.
+- **Exit:** Scope is bounded, success criteria are explicit.
+- **Skip when:** The task is a mechanical fix (typo, formatting, single-line change).
+
+### Phase 1: Diverge
+- **Trigger:** Feature work, architecture decisions, unclear approach.
+- **Steps:**
+  1a. **Research Gate** — Search `gh` CLI, npm, web for existing solutions. Write a reuse assessment: use-as-is / adapt / must-build. If use-as-is, skip to Phase 3. If adapt, capture the adaptation needed.
+  1b. **Brainstorm** — Use `/brainstorming` to explore options, tradeoffs, and design space.
+  1c. **Grill** — Use `/grilling` to stress-test the chosen direction.
+- **Exit:** Design direction is confirmed, key tradeoffs are understood, options exhausted.
+- **Skip when:** The approach is obvious and trivial (no design decisions to make).
+
+### Phase 2: Converge
+- **Trigger:** Design direction confirmed, ready to commit to an implementation plan.
+- **Steps:**
+  2a. **Write Plan** — Use `/writing-plans` to produce a plan with execution graph, contract tests, verify commands.
+  2b. **Design Arena** (optional) — Use `/design-arena` for multi-agent adversarial review on high-stakes or controversial decisions.
+  2c. **Rubric Check** — Score the plan against `.pi/rubric-checklist.md`. Flag any dimension scoring "poor".
+- **Exit:** Approved plan with execution graph, rubric scores >= "ok" on all dimensions.
+- **Skip when:** Task is simple enough that a plan would be overhead.
+
+### Phase 3: Execute
+- **Trigger:** Approved plan ready for implementation.
+- **Steps:**
+  3a. **Dispatch** — For independent concurrent groups: use `subagent-driven-development`. For sequential execution: use `executing-plans`.
+  3b. **Persona Match** — Dispatch each sub-task with a persona hint from `constitution.md` Agent Pool: mechanical edits → speed, cross-module → scalable, decoupling → maintain, deletion/simplification → minimal, parallel groups → parallel.
+- **Exit:** All plan nodes pass their verify commands. Contract tests pass.
+- **Skip when:** No plan was written (single-file, trivial change).
+
+### Phase 4: Close
+- **Trigger:** Implementation complete, all tests pass.
+- **Steps:**
+  4a. **Verify** — Run end-to-end verification. Confirm no regressions.
+  4b. **Finish** — Use `finishing-a-development-branch` to decide: merge, PR, or keep as branch.
+  4c. **Reflect** — Consider running `/reflect` to extract insights from the completed work.
+- **Exit:** Code merged or branch documented with status.
+
 ## Agent Behavior
 
 How the coding agent should operate in this repo.
 
 ### Navigation & Discovery
 
+0. **Search before building** — before proposing any solution, search for existing approaches: `gh search code`, `gh search repos`, npm registry, and `web_search`. Write a one-line reuse assessment: use-as-is / adapt / must-build. Only proceed to build if no mature solution exists.
 1. **Start with `ls` or `read`** to understand current layout before acting — the repo is early-stage and layout may drift from docs.
 2. **Use `rg` (ripgrep) for code search**, `ls` for directory listing, `read` for file inspection. Prefer `rg` over `grep`.
 3. **Check `package.json`** (root and per-package) for actual scripts and dependencies — these are the source of truth.
