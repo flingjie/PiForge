@@ -117,6 +117,38 @@ const provider: LLMProvider = {
   complete: (p) => Promise.resolve(mockComplete(p)),
 };
 
+/**
+ * LLMProvider for the mode-specific pipeline tests. Handles the perspective
+ * suggestion prompt, and delegates everything else to mockComplete (arena
+ * solution agents, critic, synthesizers).
+ */
+function mockLLMProvider(): LLMProvider {
+  return {
+    complete: async (prompt: string): Promise<string> => {
+      if (prompt.includes("Design Strategy Advisor")) {
+        return JSON.stringify({
+          suggestions: [
+            {
+              decision: "Database Selection",
+              perspectives: [
+                { persona: "speed", reason: "Storage choice impacts latency" },
+                { persona: "maintain", reason: "Interface must be replaceable" },
+              ],
+            },
+          ],
+        });
+      }
+      return mockComplete(prompt);
+    },
+  };
+}
+
+function mockExecutor(): NodeExecutor {
+  return async (node) => ({
+    output: `created ${node.files.join(", ")}`,
+  });
+}
+
 describe("Arena → TODO Graph → Orchestrator pipeline", () => {
   it("runs the full pipeline end to end", async () => {
     // 1. Run Arena.
@@ -247,4 +279,61 @@ describe("Arena → TODO Graph → Orchestrator pipeline", () => {
     expect(result.pipelineId).toBeDefined();
     expect(result.report.completed).toBeGreaterThan(0);
   });
+
+  it("runs in perspectives mode without executing arena", async () => {
+    const mockLLm: LLMProvider = mockLLMProvider();
+
+    const result = await runPipeline({
+      plan,
+      llm: mockLLm,
+      executor: mockExecutor(),
+      constitution,
+      mode: "perspectives",
+    });
+
+    expect(result.perspectivesSuggestions).toBeDefined();
+    expect(result.perspectivesSuggestions!.length).toBeGreaterThan(0);
+    expect(result.report).toBeNull();
+    expect(result.todoMarkdown).toBe("");
+  }, 10000);
+
+  it("runs in arena-only mode with debate summary", async () => {
+    const mockLLm: LLMProvider = mockLLMProvider();
+
+    const result = await runPipeline({
+      plan,
+      llm: mockLLm,
+      executor: mockExecutor(),
+      constitution,
+      mode: "arena-only",
+    });
+
+    expect(result.arenaResult.state.status).toBe("completed");
+    expect(result.debateSummary).toBeDefined();
+    expect(result.debateSummary!.length).toBeGreaterThan(0);
+    expect(result.report).toBeNull(); // not executed
+  }, 10000);
+
+  it("passes confirmed perspectives to arena", async () => {
+    const mockLLm: LLMProvider = mockLLMProvider();
+    const perspectives = new Map([
+      ["Database Selection", ["speed", "maintain"]],
+    ]);
+
+    const result = await runPipeline({
+      plan,
+      llm: mockLLm,
+      executor: mockExecutor(),
+      constitution,
+      mode: "arena-only",
+      perspectives,
+    });
+
+    expect(result.arenaResult.state.status).toBe("completed");
+    // Only 2 agents dispatched (not the default 3 core + extensions)
+    const solutions = result.arenaResult.state.solutions.get("gap-1");
+    expect(solutions).toBeDefined();
+    const personas = [...new Set(solutions!.map(s => s.persona))].sort();
+    expect(personas).toEqual(["maintain", "speed"]);
+  }, 10000);
 });
