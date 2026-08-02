@@ -167,28 +167,35 @@ function parseSynthesizeAll(raw: string): { revisedPlan: string; todoMarkdown: s
 
 // ---- Orchestrator ----
 
-/** Extract every `## Design Decision:` section from the plan as a SubProblem. */
+/** Extract decision points from `## Decision Points` section.
+ *
+ * Format:
+ *   ## Decision Points
+ *   - title: description
+ *   - title: description
+ */
 function extractDecisions(planContent: string): SubProblem[] {
   const decisions: SubProblem[] = [];
-  const headerRegex = /^##\s+Design Decision:\s*(.+)$/gm;
+
+  // Find the ## Decision Points section
+  const sectionMatch = planContent.match(/^##\s+Decision Points\s*\n([\s\S]*?)(?=\n##\s|\n\s*$)/m);
+  if (!sectionMatch) return decisions;
+
+  const section = sectionMatch[1]!;
+  const itemRegex = /^-\s+([^:]+)\s*:\s*(.+)$/gm;
   let match: RegExpExecArray | null;
   let counter = 0;
 
-  while ((match = headerRegex.exec(planContent)) !== null) {
-    const title = match[1]!.trim();
-    const start = match.index + match[0].length;
-    // Find the next ## header or end of content
-    const nextHeader = planContent.indexOf("\n## ", start);
-    const body = planContent
-      .slice(start, nextHeader === -1 ? undefined : nextHeader)
-      .trim();
-
+  while ((match = itemRegex.exec(section)) !== null) {
     counter++;
+    const title = match[1]!.trim();
+    const description = match[2]!.trim();
+
     decisions.push({
       id: `gap-${counter}`,
       title,
-      description: body.slice(0, 200),
-      sourceSection: `## Design Decision: ${title}`,
+      description: description.slice(0, 200),
+      sourceSection: `## Decision Points`,
     });
   }
 

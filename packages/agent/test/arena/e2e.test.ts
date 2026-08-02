@@ -7,11 +7,9 @@ const samplePlan = `# Auth Module
 ## Context
 Add auth to the API.
 
-## Design Decision: Database Selection
-Choose database for credentials.
-
-## Design Decision: API Boundary
-Expose /api/auth/* endpoints.
+## Decision Points
+- Database Selection: Choose database for credentials.
+- API Boundary: Expose /api/auth/* endpoints.
 `;
 
 function mockComplete(prompt: string): string {

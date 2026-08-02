@@ -10,8 +10,8 @@ const samplePlan = `# Auth Module Design
 ## Context
 We need to add authentication to the API.
 
-## Design Decision: Database Selection
-We need to choose a database for storing user credentials and session tokens.
+## Decision Points
+- Database Selection: We need to choose a database for storing user credentials and session tokens.
 
 ## Out of Scope
 - OAuth integration
@@ -105,7 +105,7 @@ describe("runArena", () => {
     expect(personas).toHaveLength(3);
   });
 
-  it("skips arena when no design decisions found", async () => {
+  it("skips arena when no decision points found", async () => {
     const boringPlan = `# Simple Script\n\n## Context\nA one-off script.\n`;
     const provider: LLMProvider = { complete: () => Promise.resolve("{}") };
     const result = await runArena(defaultConfig, provider, boringPlan);

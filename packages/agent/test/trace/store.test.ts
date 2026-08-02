@@ -81,8 +81,8 @@ function makePipelineResult(overrides: Partial<{
 
   const state: ArenaState = {
     config: { maxDepth: 2, maxCritiqueCycles: 1 },
-    originalPlan: "# Plan\n\n## Design Decision: Database Selection\n...",
-    subProblems: [{ id: "gap-1", title: "Database Selection", description: "Choose DB.", sourceSection: "## Design Decision: Database Selection" }],
+    originalPlan: "# Plan\n\n## Decision Points\n- Database Selection: Choose DB.",
+    subProblems: [{ id: "gap-1", title: "Database Selection", description: "Choose DB.", sourceSection: "## Decision Points" }],
     solutions: overrides.solutions ?? solutions,
     critiques: overrides.critiques ?? critiques,
     currentDepth: 0,

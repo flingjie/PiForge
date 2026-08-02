@@ -22,8 +22,8 @@ const plan = `# Auth Module
 ## Context
 Add auth to the API.
 
-## Design Decision: Database Selection
-We need to choose a database for storing user credentials and session tokens.
+## Decision Points
+- Database Selection: We need to choose a database for storing user credentials and session tokens.
 
 ## Out of Scope
 - OAuth
