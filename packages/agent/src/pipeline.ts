@@ -55,16 +55,16 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
   // ---- Perspectives phase ----
   if (mode === "full" || mode === "arena-only" || mode === "perspectives") {
     if (options.perspectives) {
-      // Use pre-confirmed perspectives (no LLM call needed)
       perspectivesSuggestions = [...options.perspectives.entries()].map(([decision, personas]) => ({
         decision,
         perspectives: personas.map((p) => ({ persona: p, reason: "pre-confirmed" })),
       }));
-    } else {
-      // Auto-suggest via LLM
+    } else if (mode === "perspectives" || mode === "arena-only") {
+      // Auto-suggest via LLM only when user will review
       const decisions = extractDecisions(options.plan);
       perspectivesSuggestions = await suggestPerspectives(options.llm, decisions, constitution);
     }
+    // full mode without perspectives: skip LLM call, Arena uses core defaults
   }
 
   if (mode === "perspectives") {
