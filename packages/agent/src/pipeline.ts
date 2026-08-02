@@ -92,7 +92,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     todoMarkdown = options.todoMarkdown;
     arenaResult = { state: null!, problemsBattled: 0, recursiveBattles: 0, durationMs: 0 };
   } else {
-    arenaResult = await runArena(arenaConfig, options.llm, options.plan, constitution);
+    arenaResult = await runArena(arenaConfig, options.llm, options.plan, constitution, options.perspectives);
     if (!arenaResult.state.synthesis) {
       throw new Error("Arena completed without synthesis result");
     }

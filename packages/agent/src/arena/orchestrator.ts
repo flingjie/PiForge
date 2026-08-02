@@ -220,8 +220,9 @@ async function battleSubProblem(
   problem: SubProblem,
   provider: LLMProvider,
   constitution: Constitution,
+  perspectives?: Map<string, string[]>,
 ): Promise<void> {
-  const personas = getCoreAgentsFromConstitution(constitution);
+  const personas = perspectives?.get(problem.title) ?? getCoreAgentsFromConstitution(constitution);
   const rubric = constitution.rubric;
 
   const solutions = await Promise.all(
@@ -274,6 +275,7 @@ export async function runArena(
   provider: LLMProvider,
   planContent: string,
   constitution?: Constitution,
+  perspectives?: Map<string, string[]>,
 ): Promise<ArenaResult> {
   const startTime = performance.now();
   const state = createInitialState(config, planContent);
@@ -289,7 +291,7 @@ export async function runArena(
   }
 
   for (const problem of state.subProblems) {
-    await battleSubProblem(state, problem, provider, c);
+    await battleSubProblem(state, problem, provider, c, perspectives);
     if (state.currentDepth > 0) recursiveBattles++;
   }
 
