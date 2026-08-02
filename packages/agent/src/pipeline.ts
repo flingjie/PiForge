@@ -8,6 +8,8 @@ import type { ArenaConfig, LLMProvider, ArenaResult } from "./arena/types.js";
 import type { NodeExecutor, ExecutionReport } from "./todo/types.js";
 import type { Constitution } from "./constitution/types.js";
 
+export type PipelineMode = "full" | "arena-only" | "execute-only";
+
 export interface PipelineOptions {
   plan: string;
   llm: LLMProvider;
@@ -15,18 +17,17 @@ export interface PipelineOptions {
   constitution?: Constitution;
   arena?: Partial<ArenaConfig>;
   outputDir?: string;
-  /** Identifier for this pipeline run. Auto-generated if not provided. */
   pipelineId?: string;
-  /** Trace configuration. When enabled, writes markdown trace files after completion. */
+  mode?: PipelineMode;
+  todoMarkdown?: string;
   trace?: TraceOptions;
 }
 
 export interface PipelineResult {
-  /** Identifier for this pipeline run. */
   pipelineId: string;
   revisedPlan: string;
   todoMarkdown: string;
-  report: ExecutionReport;
+  report: ExecutionReport | null;
   arenaResult: ArenaResult;
 }
 
@@ -34,6 +35,10 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
   const now = new Date().toISOString().replace(/[:.]/g, "").slice(0, 17);
   const hex = randomUUID().slice(0, 6);
   const pipelineId = options.pipelineId ?? `${now}-${hex}`;
+  const mode = options.mode ?? "full";
+
+  let revisedPlan = options.plan;
+  let todoMarkdown = "";
 
   const constitution = options.constitution ?? createDefaultConstitution();
   const arenaConfig: ArenaConfig = {
@@ -42,37 +47,39 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     outputDir: options.outputDir,
   };
 
-  const arenaResult = await runArena(arenaConfig, options.llm, options.plan, constitution);
+  let arenaResult: ArenaResult;
 
-  if (!arenaResult.state.synthesis) {
-    throw new Error("Arena completed without synthesis result");
+  if (mode === "execute-only") {
+    if (!options.todoMarkdown) throw new Error("todoMarkdown is required in execute-only mode");
+    todoMarkdown = options.todoMarkdown;
+    arenaResult = { state: null!, problemsBattled: 0, recursiveBattles: 0, durationMs: 0 };
+  } else {
+    arenaResult = await runArena(arenaConfig, options.llm, options.plan, constitution);
+    if (!arenaResult.state.synthesis) {
+      throw new Error("Arena completed without synthesis result");
+    }
+    revisedPlan = arenaResult.state.synthesis.revisedPlan;
+    todoMarkdown = arenaResult.state.synthesis.todoMarkdown;
   }
 
-  const report = await runOrchestratorFromMarkdown(
-    arenaResult.state.synthesis.todoMarkdown,
-    options.executor,
-    { maxRetries: 0 },
-  );
+  let report: ExecutionReport | null = null;
+  if (mode === "full" || mode === "execute-only") {
+    report = await runOrchestratorFromMarkdown(todoMarkdown, options.executor, { maxRetries: 0 });
+  }
 
-  const result: PipelineResult = {
-    pipelineId,
-    revisedPlan: arenaResult.state.synthesis.revisedPlan,
-    todoMarkdown: arenaResult.state.synthesis.todoMarkdown,
-    report,
-    arenaResult,
-  };
+  const result: PipelineResult = { pipelineId, revisedPlan, todoMarkdown, report, arenaResult };
 
   if (options.trace?.enabled) {
     const traceDir = options.trace.outputDir || "output/traces";
     savePipelineIndex(pipelineId, options.trace.planPath ?? null, traceDir);
     saveArenaTrace(pipelineId, options.trace.planPath ?? null, result, traceDir);
-    saveTodoTrace(pipelineId, result, traceDir);
+    if (report) saveTodoTrace(pipelineId, result, traceDir);
     appendToIndex(pipelineId, traceDir, {
       time: new Date().toISOString(),
       planPath: options.trace.planPath ?? null,
       decisionsCount: arenaResult.problemsBattled,
-      todoCompleted: report.completed,
-      todoTotal: report.totalNodes,
+      todoCompleted: report?.completed ?? 0,
+      todoTotal: report?.totalNodes ?? 0,
     });
   }
 
