@@ -174,7 +174,7 @@ function parseSynthesizeAll(raw: string): { revisedPlan: string; todoMarkdown: s
  *   - title: description
  *   - title: description
  */
-function extractDecisions(planContent: string): SubProblem[] {
+export function extractDecisions(planContent: string): SubProblem[] {
   const decisions: SubProblem[] = [];
 
   // Find the ## Decision Points section
