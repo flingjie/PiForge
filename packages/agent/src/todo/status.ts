@@ -6,6 +6,8 @@ const VALID_STATUSES = new Set([
   "completed",
   "failed",
   "skipped",
+  "escalated",
+  "degraded",
 ]);
 
 /**

@@ -9,8 +9,19 @@ export interface TodoNode {
   files: string[];
   verify: string;
   dependsOn: number[];
-  status: "pending" | "in_progress" | "completed" | "failed" | "skipped";
+  status: NodeStatus;
+  /** Optional markdown-defined routing rules (parsed from "Routes" column). */
+  routes?: RouteRule[];
 }
+
+export type NodeStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "escalated"
+  | "degraded";
 
 /** The parsed TODO graph — nodes plus execution groups. */
 export interface TodoGraph {
@@ -27,13 +38,17 @@ export interface TodoConfig {
   todoPath: string;
   /** When true, parse and validate the graph without executing any nodes. */
   dryRun?: boolean;
+  /** Budget limits for the run. When exceeded, the orchestrator stops with a partial report. */
+  budget?: BudgetConfig;
+  /** Programmatic route handler for complex conditional routing. */
+  routeHandler?: RouteHandler;
 }
 
 /** Result of a single node execution. */
 export interface TodoNodeResult {
   nodeId: number;
   nodeName: string;
-  status: "success" | "failed" | "skipped";
+  status: "success" | "failed" | "skipped" | "escalated" | "degraded";
   output: unknown;
   error?: string;
   durationMs: number;
@@ -49,8 +64,70 @@ export interface ExecutionReport {
   completed: number;
   failed: number;
   skipped: number;
+  escalated: number;
+  degraded: number;
   nodes: TodoNodeResult[];
   durationMs: number;
   /** Optional human-readable note about the run (e.g. dry-run). */
   note?: string;
+  /** Budget status at the end of the run. Present only when budget is configured. */
+  budget?: BudgetStatus;
+}
+
+// ---- Budget ----
+
+/** Budget limits for an orchestrator run. */
+export interface BudgetConfig {
+  maxTimeMs: number;
+  maxRetriesPerNode: number;
+  /** Approximate token budget (honor-system, not precise). */
+  maxTokens?: number;
+}
+
+/** Current budget consumption during a run. */
+export interface BudgetStatus {
+  elapsedMs: number;
+  tokensUsed: number;
+  nodeRetries: Map<number, number>;
+  exceeded: "none" | "time" | "tokens" | "retries";
+}
+
+// ---- Routing ----
+
+/** A declarative routing rule, parsed from the markdown Routes column. */
+export interface RouteRule {
+  condition: RouteCondition;
+  action: RouteAction;
+}
+
+export type RouteCondition =
+  | "on_success"
+  | "on_fail"
+  | "on_skipped"
+  | "on_budget_exceeded";
+
+export type RouteAction =
+  | { kind: "retry"; extraAttempts: number }
+  | { kind: "escalate"; reason: string }
+  | { kind: "stop"; reason: string }
+  | { kind: "activate"; nodeIds: number[] }
+  | { kind: "deactivate"; nodeIds: number[] };
+
+/** A routing decision returned by the route handler or markdown rules. */
+export type RoutingDecision =
+  | { action: "continue" }
+  | { action: "retry"; extraAttempts?: number; delayMs?: number }
+  | { action: "stop"; reason: string }
+  | { action: "escalate"; reason: string }
+  | { action: "activate"; nodeIds: number[]; timing?: "deferred" }
+  | { action: "deactivate"; nodeIds: number[] };
+
+/** Called after every node completes. Return null to fall through to markdown-defined rules. */
+export interface RouteHandler {
+  onNodeComplete(
+    node: TodoNode,
+    result: TodoNodeResult,
+    graph: TodoGraph,
+    budget: BudgetStatus,
+  ): Promise<RoutingDecision | null>;
 }

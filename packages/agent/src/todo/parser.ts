@@ -1,6 +1,8 @@
 import type { TodoGraph, TodoNode } from "./types.js";
+import { parseMarkdownRoutes } from "./routing.js";
 
-const NODE_TABLE_HEADER = "| ID | Name | Files | Verify | DependsOn | Status |";
+const NODE_TABLE_HEADER_6 = "| ID | Name | Files | Verify | DependsOn | Status |";
+const NODE_TABLE_HEADER_7 = "| ID | Name | Files | Verify | DependsOn | Routes | Status |";
 
 interface ParsedGroup {
   label: string;
@@ -24,9 +26,11 @@ function parseNodeRow(line: string): TodoNode {
     .slice(1, -1)
     .map((c) => c.trim());
 
-  if (cells.length < 6) {
-    throw new Error(`Invalid node row (expected 6 cells): "${line}"`);
+  if (cells.length !== 6 && cells.length !== 7) {
+    throw new Error(`Invalid node row (expected 6 or 7 cells): "${line}"`);
   }
+
+  const hasRoutes = cells.length === 7;
 
   return {
     id: parseInt(cells[0]!, 10),
@@ -34,16 +38,26 @@ function parseNodeRow(line: string): TodoNode {
     files: cells[2]!.split(",").map((f) => f.trim()).filter(Boolean),
     verify: cells[3]!,
     dependsOn: parseDependsOn(cells[4]!),
-    status: cells[5]! as TodoNode["status"],
+    routes: hasRoutes ? parseMarkdownRoutes(cells[5]!) : undefined,
+    status: cells[hasRoutes ? 6 : 5]! as TodoNode["status"],
   };
 }
 
 function parseNodeTable(content: string): TodoNode[] {
-  const headerIndex = content.indexOf(NODE_TABLE_HEADER);
+  // Support both 6-column (legacy) and 7-column (with Routes) formats.
+  // Try 7-column first (preferred), fall back to 6-column.
+  let headerIndex = content.indexOf(NODE_TABLE_HEADER_7);
+  let headerLength = NODE_TABLE_HEADER_7.length;
+
+  if (headerIndex === -1) {
+    headerIndex = content.indexOf(NODE_TABLE_HEADER_6);
+    headerLength = NODE_TABLE_HEADER_6.length;
+  }
+
   if (headerIndex === -1) throw new Error("No node table found in content");
 
   // Find the separator line (next line after header)
-  const afterHeader = content.slice(headerIndex + NODE_TABLE_HEADER.length);
+  const afterHeader = content.slice(headerIndex + headerLength);
   const lines = afterHeader.split("\n");
 
   // Skip the leading empty element (from the newline after the header)

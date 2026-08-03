@@ -7,10 +7,13 @@ import type {
   TodoNodeResult,
   NodeExecutor,
   ExecutionReport,
+  RoutingDecision,
 } from "./types.js";
 import { parseTodoGraph } from "./parser.js";
 import { updateStatus } from "./status.js";
 import { generateReport } from "./report.js";
+import { createBudget, updateBudget as updateB, recordRetry, checkBudget } from "./budget.js";
+import { resolveRouting } from "./routing.js";
 
 /** Error thrown when a node exhausts all retry attempts. */
 class RetryExhaustedError extends Error {
@@ -67,6 +70,160 @@ function findTransitiveDependents(
   return toSkip;
 }
 
+/** Runtime state accumulated during a run, mutated by the orchestrator loop. */
+interface RunState {
+  results: TodoNodeResult[];
+  failedIds: Set<number>;
+  deactivatedIds: Set<number>;
+  escalatedIds: Set<number>;
+  dynamicQueue: number[];
+  budget: import("./types.js").BudgetStatus;
+  stopped: boolean;
+  stopReason: string | null;
+}
+
+async function executeSingleNode(
+  node: TodoNode,
+  executor: NodeExecutor,
+  config: TodoConfig,
+  state: RunState,
+): Promise<TodoNodeResult> {
+  updateStatus(config.todoPath, node.id, "in_progress");
+  const nodeStart = Date.now();
+
+  try {
+    const { output, retryCount } = await executeWithRetry(
+      node,
+      executor,
+      config.maxRetries,
+      node.name,
+    );
+
+    const result: TodoNodeResult = {
+      nodeId: node.id,
+      nodeName: node.name,
+      status: "success",
+      output,
+      durationMs: Date.now() - nodeStart,
+      retryCount,
+    };
+
+    // Update budget: normal execution retries
+    if (config.budget) {
+      state.budget = updateB(state.budget, result.durationMs, 0);
+      for (let i = 0; i < retryCount; i++) {
+        state.budget = recordRetry(state.budget, config.budget, node.id);
+      }
+    }
+
+    return result;
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    const retryCount =
+      err instanceof RetryExhaustedError
+        ? err.attempts - 1
+        : 0;
+
+    const result: TodoNodeResult = {
+      nodeId: node.id,
+      nodeName: node.name,
+      status: "failed",
+      output: null,
+      error,
+      durationMs: Date.now() - nodeStart,
+      retryCount,
+    };
+
+    if (config.budget) {
+      state.budget = updateB(state.budget, result.durationMs, 0);
+      for (let i = 0; i <= config.maxRetries; i++) {
+        state.budget = recordRetry(state.budget, config.budget, node.id);
+      }
+    }
+
+    return result;
+  }
+}
+
+async function applyRoutingDecision(
+  decision: RoutingDecision,
+  node: TodoNode,
+  result: TodoNodeResult,
+  state: RunState,
+  config: TodoConfig,
+  executor: NodeExecutor,
+): Promise<TodoNodeResult | null> {
+  switch (decision.action) {
+    case "continue":
+      return null;
+
+    case "retry": {
+      // Execute the node again (routing-level retry, not execution-level retry)
+      updateStatus(config.todoPath, node.id, "in_progress");
+      const nodeStart = Date.now();
+
+      try {
+        const { output } = await executeWithRetry(
+          node,
+          executor,
+          (decision.extraAttempts ?? 1) - 1, // extra retries beyond the first attempt
+          node.name,
+        );
+
+        const retryResult: TodoNodeResult = {
+          nodeId: node.id,
+          nodeName: node.name,
+          status: "success",
+          output,
+          durationMs: Date.now() - nodeStart,
+          retryCount: result.retryCount + 1,
+        };
+
+        state.budget = updateB(state.budget, retryResult.durationMs, 0);
+        for (let i = 0; i < (decision.extraAttempts ?? 1); i++) {
+          state.budget = recordRetry(state.budget, config.budget!, node.id);
+        }
+
+        updateStatus(config.todoPath, node.id, "completed");
+        return retryResult;
+      } catch {
+        // Routing retry also failed — keep the original failure
+        return null;
+      }
+    }
+
+    case "escalate": {
+      state.escalatedIds.add(node.id);
+      return {
+        ...result,
+        status: "escalated",
+        error: decision.reason,
+      };
+    }
+
+    case "stop": {
+      state.stopped = true;
+      state.stopReason = decision.reason;
+      return null;
+    }
+
+    case "activate": {
+      state.dynamicQueue.push(...decision.nodeIds);
+      return null;
+    }
+
+    case "deactivate": {
+      for (const id of decision.nodeIds) {
+        state.deactivatedIds.add(id);
+      }
+      return null;
+    }
+
+    default:
+      return null;
+  }
+}
+
 export async function runOrchestrator(
   config: TodoConfig,
   executor: NodeExecutor,
@@ -89,100 +246,204 @@ export async function runOrchestrator(
       completed: nodes.length,
       failed: 0,
       skipped: 0,
+      escalated: 0,
+      degraded: 0,
       nodes,
       durationMs: 0,
       note: "dry-run: graph parsed and validated; no nodes were executed",
     };
   }
 
-  const results: TodoNodeResult[] = [];
-  const failedIds = new Set<number>();
-  const startTime = Date.now();
+  const state: RunState = {
+    results: [],
+    failedIds: new Set(),
+    deactivatedIds: new Set(),
+    escalatedIds: new Set(),
+    dynamicQueue: [],
+    budget: config.budget
+      ? createBudget(config.budget)
+      : { elapsedMs: 0, tokensUsed: 0, nodeRetries: new Map(), exceeded: "none" },
+    stopped: false,
+    stopReason: null,
+  };
 
+  const startTime = Date.now();
+  const hasBudget = config.budget !== undefined;
+
+  // ---- Process static groups ----
   for (const group of graph.groups) {
-    const toSkip = findTransitiveDependents(graph, failedIds);
-    const activeNodes = group.filter((id) => !toSkip.has(id));
-    const skippedInGroup = group.filter((id) => toSkip.has(id));
+    if (state.stopped) break;
+
+    // Check budget before processing next group
+    if (hasBudget) {
+      state.budget = updateB(state.budget, Date.now() - startTime - state.budget.elapsedMs, 0);
+      const exceeded = checkBudget(state.budget, config.budget!);
+      if (exceeded !== "none") {
+        state.budget = { ...state.budget, exceeded };
+        state.stopped = true;
+        state.stopReason = `Budget exceeded: ${exceeded}`;
+        break;
+      }
+    }
+
+    const toSkip = findTransitiveDependents(graph, state.failedIds);
+    const activeNodes = group.filter(
+      (id) => !toSkip.has(id) && !state.deactivatedIds.has(id),
+    );
+    const skippedInGroup = group.filter(
+      (id) => toSkip.has(id) || state.deactivatedIds.has(id),
+    );
 
     for (const id of skippedInGroup) {
+      const skipReason = state.deactivatedIds.has(id) ? "deactivated" : "skipped";
       updateStatus(config.todoPath, id, "skipped");
-      results.push({
+      state.results.push({
         nodeId: id,
         nodeName: graph.nodes.find((n) => n.id === id)?.name ?? `node-${id}`,
         status: "skipped",
         output: null,
         durationMs: 0,
         retryCount: 0,
+        error: skipReason === "deactivated" ? "Deactivated by routing decision" : undefined,
       });
     }
 
     if (activeNodes.length === 0) continue;
 
     const groupTasks = activeNodes.map(
-      async (nodeId): Promise<TodoNodeResult> => {
+      async (nodeId): Promise<void> => {
         const node = graph.nodes.find((n) => n.id === nodeId);
         if (!node) throw new Error(`Node ${nodeId} not found in graph`);
 
-        updateStatus(config.todoPath, nodeId, "in_progress");
+        // Execute
+        let result = await executeSingleNode(node, executor, config, state);
 
-        const nodeStart = Date.now();
+        // Resolve routing decision
+        const decision = await resolveRouting(
+          node,
+          result,
+          graph,
+          state.budget,
+          config.routeHandler,
+        );
 
-        try {
-          const { output, retryCount } = await executeWithRetry(
-            node,
-            executor,
-            config.maxRetries,
-            node.name,
-          );
-          updateStatus(config.todoPath, nodeId, "completed");
-          return {
-            nodeId,
-            nodeName: node.name,
-            status: "success",
-            output,
-            durationMs: Date.now() - nodeStart,
-            retryCount,
-          };
-        } catch (err) {
-          const error = err instanceof Error ? err.message : String(err);
-          updateStatus(config.todoPath, nodeId, "failed");
-          failedIds.add(nodeId);
-          return {
-            nodeId,
-            nodeName: node.name,
-            status: "failed",
-            output: null,
-            error,
-            durationMs: Date.now() - nodeStart,
-            retryCount: err instanceof RetryExhaustedError ? err.attempts : 0,
-          };
+        // Apply routing decision — may replace result
+        const routingResult = await applyRoutingDecision(
+          decision,
+          node,
+          result,
+          state,
+          config,
+          executor,
+        );
+
+        if (routingResult !== null) {
+          result = routingResult;
         }
+
+        // Update status based on final result
+        if (result.status === "failed") {
+          state.failedIds.add(nodeId);
+          updateStatus(config.todoPath, nodeId, "failed");
+        } else if (result.status === "escalated") {
+          updateStatus(config.todoPath, nodeId, "escalated");
+        } else {
+          updateStatus(config.todoPath, nodeId, "completed");
+        }
+
+        state.results.push(result);
       },
     );
 
-    const groupResults = await Promise.all(groupTasks);
-    results.push(...groupResults);
+    await Promise.all(groupTasks);
+
+    if (state.stopped) break;
   }
 
-  return generateReport(results, startTime);
+  // ---- Process dynamic queue (deferred) ----
+  if (state.dynamicQueue.length > 0 && !state.stopped) {
+    const seen = new Set(state.results.map((r) => r.nodeId).concat([...state.failedIds]));
+    const newNodes = state.dynamicQueue.filter((id) => !seen.has(id));
+
+    if (newNodes.length > 0) {
+      const dynamicTasks = newNodes.map(
+        async (nodeId): Promise<void> => {
+          if (state.stopped) return;
+
+          if (hasBudget) {
+            const exceeded = checkBudget(state.budget, config.budget!);
+            if (exceeded !== "none") {
+              state.budget = { ...state.budget, exceeded };
+              state.stopped = true;
+              state.stopReason = `Budget exceeded: ${exceeded}`;
+              return;
+            }
+          }
+
+          const node = graph.nodes.find((n) => n.id === nodeId);
+          if (!node) return;
+
+          let result = await executeSingleNode(node, executor, config, state);
+          const decision = await resolveRouting(
+            node,
+            result,
+            graph,
+            state.budget,
+            config.routeHandler,
+          );
+          const routingResult = await applyRoutingDecision(
+            decision,
+            node,
+            result,
+            state,
+            config,
+            executor,
+          );
+          if (routingResult !== null) result = routingResult;
+
+          if (result.status === "failed") {
+            state.failedIds.add(nodeId);
+            updateStatus(config.todoPath, nodeId, "failed");
+          } else if (result.status === "escalated") {
+            updateStatus(config.todoPath, nodeId, "escalated");
+          } else {
+            updateStatus(config.todoPath, nodeId, "completed");
+          }
+
+          state.results.push(result);
+        },
+      );
+
+      await Promise.all(dynamicTasks);
+    }
+  }
+
+  return generateReport(state.results, startTime, {
+    budget: state.budget,
+    escalated: state.escalatedIds.size,
+    note: state.stopReason ?? undefined,
+  });
 }
 
 /**
- * Runs the orchestrator directly from an in-memory TODO markdown string,
- * without requiring a pre-existing file. Writes the markdown to a temp file,
- * delegates to {@link runOrchestrator}, then cleans up the temp file.
+ * Runs the orchestrator directly from an in-memory TODO markdown string.
  */
 export async function runOrchestratorFromMarkdown(
   todoMarkdown: string,
   executor: NodeExecutor,
-  options?: { maxRetries?: number },
+  options?: { maxRetries?: number; budget?: import("./types.js").BudgetConfig; routeHandler?: import("./types.js").RouteHandler },
 ): Promise<ExecutionReport> {
   const dir = mkdtempSync(join(tmpdir(), "piforge-todo-"));
   const todoPath = join(dir, "todo.md");
   try {
     writeFileSync(todoPath, todoMarkdown, "utf-8");
     return await runOrchestrator(
-      { maxRetries: options?.maxRetries ?? 0, todoPath },
+      {
+        maxRetries: options?.maxRetries ?? 0,
+        todoPath,
+        budget: options?.budget,
+        routeHandler: options?.routeHandler,
+      },
       executor,
     );
   } finally {

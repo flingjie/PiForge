@@ -6,11 +6,22 @@ export type {
   NodeExecutor,
   TodoNodeResult,
   ExecutionReport,
+  NodeStatus,
+  BudgetConfig,
+  BudgetStatus,
+  RouteRule,
+  RouteCondition,
+  RouteAction,
+  RoutingDecision,
+  RouteHandler,
 } from "./todo/types.js";
 export { parseTodoGraph } from "./todo/parser.js";
 export { updateStatus, readStatuses } from "./todo/status.js";
 export { generateReport } from "./todo/report.js";
+export type { GenerateReportOptions } from "./todo/report.js";
 export { runOrchestrator, runOrchestratorFromMarkdown } from "./todo/orchestrator.js";
+export { createBudget, updateBudget, recordRetry, checkBudget } from "./todo/budget.js";
+export { parseMarkdownRoutes, resolveRouting } from "./todo/routing.js";
 
 // Design Arena.
 export type {
