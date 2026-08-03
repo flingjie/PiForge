@@ -58,3 +58,8 @@ export function checkBudget(
   // nodeRetries is already checked in recordRetry
   return "none";
 }
+
+/** Estimate token count from text. Rough heuristic: ~4 characters per token. */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}

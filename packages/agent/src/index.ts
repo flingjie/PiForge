@@ -20,8 +20,9 @@ export { updateStatus, readStatuses } from "./todo/status.js";
 export { generateReport } from "./todo/report.js";
 export type { GenerateReportOptions } from "./todo/report.js";
 export { runOrchestrator, runOrchestratorFromMarkdown } from "./todo/orchestrator.js";
-export { createBudget, updateBudget, recordRetry, checkBudget } from "./todo/budget.js";
-export { parseMarkdownRoutes, resolveRouting } from "./todo/routing.js";
+export { createBudget, updateBudget, recordRetry, checkBudget, estimateTokens } from "./todo/budget.js";
+export { parseMarkdownRoutes, resolveRouting, wrapSimpleHandler } from "./todo/routing.js";
+export type { SimpleRouteHandler } from "./todo/routing.js";
 
 // Design Arena.
 export type {

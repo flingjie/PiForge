@@ -1,9 +1,6 @@
 import type { TodoGraph, TodoNode } from "./types.js";
 import { parseMarkdownRoutes } from "./routing.js";
 
-const NODE_TABLE_HEADER_6 = "| ID | Name | Files | Verify | DependsOn | Status |";
-const NODE_TABLE_HEADER_7 = "| ID | Name | Files | Verify | DependsOn | Routes | Status |";
-
 interface ParsedGroup {
   label: string;
   ids: number[];
@@ -44,24 +41,25 @@ function parseNodeRow(line: string): TodoNode {
 }
 
 function parseNodeTable(content: string): TodoNode[] {
-  // Support both 6-column (legacy) and 7-column (with Routes) formats.
-  // Try 7-column first (preferred), fall back to 6-column.
-  let headerIndex = content.indexOf(NODE_TABLE_HEADER_7);
-  let headerLength = NODE_TABLE_HEADER_7.length;
+  // Match the node table header with flexible whitespace padding.
+  // Supports both 6-column (legacy) and 7-column (with Routes) formats.
+  const headerPattern =
+    /\|\s*ID\s*\|\s*Name\s*\|\s*Files\s*\|\s*Verify\s*\|\s*DependsOn\s*\|(?:\s*Routes\s*\|)?\s*Status\s*\|/;
+  const match = content.match(headerPattern);
 
-  if (headerIndex === -1) {
-    headerIndex = content.indexOf(NODE_TABLE_HEADER_6);
-    headerLength = NODE_TABLE_HEADER_6.length;
+  if (!match || match.index === undefined) {
+    throw new Error("No node table found in content");
   }
 
-  if (headerIndex === -1) throw new Error("No node table found in content");
+  const headerIndex = match.index;
+  const headerLength = match[0].length;
 
   // Find the separator line (next line after header)
   const afterHeader = content.slice(headerIndex + headerLength);
   const lines = afterHeader.split("\n");
 
-  // Skip the leading empty element (from the newline after the header)
-  // and the separator line (|---|...)
+  // Skip the separator line (|---|...) — lines[0] is empty (before first \n),
+  // lines[1] is the separator, lines[2] is the first data row.
   const dataLines = lines.slice(2);
 
   const nodes: TodoNode[] = [];

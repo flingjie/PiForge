@@ -114,6 +114,8 @@ async function executeSingleNode(
       for (let i = 0; i < retryCount; i++) {
         state.budget = recordRetry(state.budget, config.budget, node.id);
       }
+      const exceeded = checkBudget(state.budget, config.budget);
+      if (exceeded !== "none") state.budget = { ...state.budget, exceeded };
     }
 
     return result;
@@ -139,6 +141,8 @@ async function executeSingleNode(
       for (let i = 0; i <= config.maxRetries; i++) {
         state.budget = recordRetry(state.budget, config.budget, node.id);
       }
+      const exceeded = checkBudget(state.budget, config.budget);
+      if (exceeded !== "none") state.budget = { ...state.budget, exceeded };
     }
 
     return result;
@@ -166,7 +170,7 @@ async function applyRoutingDecision(
         const { output } = await executeWithRetry(
           node,
           executor,
-          (decision.extraAttempts ?? 1) - 1, // extra retries beyond the first attempt
+          (decision.extraAttempts ?? 1), // routing retries (including the initial retry attempt)
           node.name,
         );
 
@@ -224,6 +228,78 @@ async function applyRoutingDecision(
   }
 }
 
+/** Process a batch of node IDs in parallel. Handles execution, routing, and status updates. */
+async function runNodeBatch(
+  nodeIds: number[],
+  graph: import("./types.js").TodoGraph,
+  config: TodoConfig,
+  executor: NodeExecutor,
+  state: RunState,
+  hasBudget: boolean,
+): Promise<void> {
+  if (state.stopped) return;
+
+  // Budget check before batch
+  if (hasBudget) {
+    const exceeded = checkBudget(state.budget, config.budget!);
+    if (exceeded !== "none") {
+      state.budget = { ...state.budget, exceeded };
+      state.stopped = true;
+      state.stopReason = `Budget exceeded: ${exceeded}`;
+      return;
+    }
+  }
+
+  const tasks = nodeIds.map(
+    async (nodeId): Promise<void> => {
+      if (state.stopped) return;
+
+      const node = graph.nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+
+      // Execute
+      let result = await executeSingleNode(node, executor, config, state);
+
+      // Resolve routing decision
+      const decision = await resolveRouting(
+        node,
+        result,
+        graph,
+        state.budget,
+        config.routeHandler,
+      );
+
+      // Apply routing decision — may replace result
+      const routingResult = await applyRoutingDecision(
+        decision,
+        node,
+        result,
+        state,
+        config,
+        executor,
+      );
+
+      if (routingResult !== null) {
+        result = routingResult;
+      }
+
+      // Update status based on final result
+      if (result.status === "failed") {
+        state.failedIds.add(nodeId);
+        updateStatus(config.todoPath, nodeId, "failed");
+      } else if (result.status === "escalated") {
+        updateStatus(config.todoPath, nodeId, "escalated");
+      } else {
+        updateStatus(config.todoPath, nodeId, "completed");
+      }
+
+      state.results.push(result);
+    },
+  );
+
+  await Promise.all(tasks);
+}
+
 export async function runOrchestrator(
   config: TodoConfig,
   executor: NodeExecutor,
@@ -272,20 +348,6 @@ export async function runOrchestrator(
 
   // ---- Process static groups ----
   for (const group of graph.groups) {
-    if (state.stopped) break;
-
-    // Check budget before processing next group
-    if (hasBudget) {
-      state.budget = updateB(state.budget, Date.now() - startTime - state.budget.elapsedMs, 0);
-      const exceeded = checkBudget(state.budget, config.budget!);
-      if (exceeded !== "none") {
-        state.budget = { ...state.budget, exceeded };
-        state.stopped = true;
-        state.stopReason = `Budget exceeded: ${exceeded}`;
-        break;
-      }
-    }
-
     const toSkip = findTransitiveDependents(graph, state.failedIds);
     const activeNodes = group.filter(
       (id) => !toSkip.has(id) && !state.deactivatedIds.has(id),
@@ -310,112 +372,15 @@ export async function runOrchestrator(
 
     if (activeNodes.length === 0) continue;
 
-    const groupTasks = activeNodes.map(
-      async (nodeId): Promise<void> => {
-        const node = graph.nodes.find((n) => n.id === nodeId);
-        if (!node) throw new Error(`Node ${nodeId} not found in graph`);
-
-        // Execute
-        let result = await executeSingleNode(node, executor, config, state);
-
-        // Resolve routing decision
-        const decision = await resolveRouting(
-          node,
-          result,
-          graph,
-          state.budget,
-          config.routeHandler,
-        );
-
-        // Apply routing decision — may replace result
-        const routingResult = await applyRoutingDecision(
-          decision,
-          node,
-          result,
-          state,
-          config,
-          executor,
-        );
-
-        if (routingResult !== null) {
-          result = routingResult;
-        }
-
-        // Update status based on final result
-        if (result.status === "failed") {
-          state.failedIds.add(nodeId);
-          updateStatus(config.todoPath, nodeId, "failed");
-        } else if (result.status === "escalated") {
-          updateStatus(config.todoPath, nodeId, "escalated");
-        } else {
-          updateStatus(config.todoPath, nodeId, "completed");
-        }
-
-        state.results.push(result);
-      },
-    );
-
-    await Promise.all(groupTasks);
-
+    await runNodeBatch(activeNodes, graph, config, executor, state, hasBudget);
     if (state.stopped) break;
   }
 
   // ---- Process dynamic queue (deferred) ----
-  if (state.dynamicQueue.length > 0 && !state.stopped) {
+  if (state.dynamicQueue.length > 0) {
     const seen = new Set(state.results.map((r) => r.nodeId).concat([...state.failedIds]));
     const newNodes = state.dynamicQueue.filter((id) => !seen.has(id));
-
-    if (newNodes.length > 0) {
-      const dynamicTasks = newNodes.map(
-        async (nodeId): Promise<void> => {
-          if (state.stopped) return;
-
-          if (hasBudget) {
-            const exceeded = checkBudget(state.budget, config.budget!);
-            if (exceeded !== "none") {
-              state.budget = { ...state.budget, exceeded };
-              state.stopped = true;
-              state.stopReason = `Budget exceeded: ${exceeded}`;
-              return;
-            }
-          }
-
-          const node = graph.nodes.find((n) => n.id === nodeId);
-          if (!node) return;
-
-          let result = await executeSingleNode(node, executor, config, state);
-          const decision = await resolveRouting(
-            node,
-            result,
-            graph,
-            state.budget,
-            config.routeHandler,
-          );
-          const routingResult = await applyRoutingDecision(
-            decision,
-            node,
-            result,
-            state,
-            config,
-            executor,
-          );
-          if (routingResult !== null) result = routingResult;
-
-          if (result.status === "failed") {
-            state.failedIds.add(nodeId);
-            updateStatus(config.todoPath, nodeId, "failed");
-          } else if (result.status === "escalated") {
-            updateStatus(config.todoPath, nodeId, "escalated");
-          } else {
-            updateStatus(config.todoPath, nodeId, "completed");
-          }
-
-          state.results.push(result);
-        },
-      );
-
-      await Promise.all(dynamicTasks);
-    }
+    await runNodeBatch(newNodes, graph, config, executor, state, hasBudget);
   }
 
   return generateReport(state.results, startTime, {

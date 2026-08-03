@@ -10,6 +10,20 @@ import type {
   RouteHandler,
 } from "./types.js";
 
+// ---- Simplified handler adapter ----
+
+/** A simplified route handler that only receives the node result. */
+export type SimpleRouteHandler = (
+  result: TodoNodeResult,
+) => Promise<RoutingDecision | null>;
+
+/** Wrap a SimpleRouteHandler into the full RouteHandler interface. */
+export function wrapSimpleHandler(handler: SimpleRouteHandler): RouteHandler {
+  return {
+    onNodeComplete: async (_node, result) => handler(result),
+  };
+}
+
 // ---- Markdown route parsing ----
 
 const RULE_SEPARATOR = ";";
