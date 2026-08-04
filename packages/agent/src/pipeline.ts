@@ -26,6 +26,8 @@ export interface PipelineOptions {
   /** Pre-confirmed perspectives (decision title → persona list). If not set, runs suggestPerspectives in full/arena-only mode. */
   perspectives?: Map<string, string[]>;
   trace?: TraceOptions;
+  /** AbortSignal for cancelling long-running LLM calls. Checked before each provider call. */
+  signal?: AbortSignal;
 }
 
 export interface PipelineResult {
@@ -62,7 +64,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     } else if (mode === "perspectives" || mode === "arena-only") {
       // Auto-suggest via LLM only when user will review
       const decisions = extractDecisions(options.plan);
-      perspectivesSuggestions = await suggestPerspectives(options.llm, decisions, constitution);
+      perspectivesSuggestions = await suggestPerspectives(options.llm, decisions, constitution, options.signal);
     }
     // full mode without perspectives: skip LLM call, Arena uses core defaults
   }
@@ -73,7 +75,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
       revisedPlan: options.plan,
       todoMarkdown: "",
       report: null,
-      arenaResult: { state: null!, problemsBattled: 0, recursiveBattles: 0, durationMs: 0 },
+      arenaResult: { state: null, problemsBattled: 0, recursiveBattles: 0, durationMs: 0 },
       perspectivesSuggestions,
     };
   }
@@ -90,15 +92,16 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
   if (mode === "execute-only") {
     if (!options.todoMarkdown) throw new Error("todoMarkdown is required in execute-only mode");
     todoMarkdown = options.todoMarkdown;
-    arenaResult = { state: null!, problemsBattled: 0, recursiveBattles: 0, durationMs: 0 };
+    arenaResult = { state: null, problemsBattled: 0, recursiveBattles: 0, durationMs: 0 };
   } else {
-    arenaResult = await runArena(arenaConfig, options.llm, options.plan, constitution, options.perspectives);
-    if (!arenaResult.state.synthesis) {
+    arenaResult = await runArena(arenaConfig, options.llm, options.plan, constitution, options.perspectives, options.signal);
+    const arenaState = arenaResult.state!;
+    if (!arenaState.synthesis) {
       throw new Error("Arena completed without synthesis result");
     }
-    revisedPlan = arenaResult.state.synthesis.revisedPlan;
-    todoMarkdown = arenaResult.state.synthesis.todoMarkdown;
-    debateSummary = formatDebateSummary(arenaResult.state);
+    revisedPlan = arenaState.synthesis.revisedPlan;
+    todoMarkdown = arenaState.synthesis.todoMarkdown;
+    debateSummary = formatDebateSummary(arenaState);
   }
 
   // ---- Execution phase ----

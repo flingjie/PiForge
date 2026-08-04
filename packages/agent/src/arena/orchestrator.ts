@@ -13,29 +13,7 @@ import type {
 import type { Constitution, RubricDimension } from "../constitution/types.js";
 import { getCoreAgentsFromConstitution, AGENT_SYSTEM_PROMPTS, CRITIC_PROMPT, SYNTHESIZER_PROMPT, SYNTHESIZE_ALL_PROMPT } from "./agent-pool.js";
 import { createDefaultConstitution } from "../constitution/defaults.js";
-
-// ---- JSON helpers ----
-
-function extractJSON(raw: string): string {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start === -1 || end === -1 || start >= end) {
-    throw new Error(`No JSON object found in response: ${raw.slice(0, 200)}`);
-  }
-  return raw.slice(start, end + 1);
-}
-
-async function complete(provider: LLMProvider, prompt: string): Promise<string> {
-  let response = await provider.complete(prompt);
-  try {
-    JSON.parse(extractJSON(response));
-    return response;
-  } catch {
-    return provider.complete(
-      prompt + "\n\nYour previous response was not valid JSON. Return ONLY a valid JSON object.",
-    );
-  }
-}
+import { extractJSON, complete } from "./json-utils.js";
 
 function formatRubric(dimensions: RubricDimension[]): string {
   return dimensions.map((d) => `  - ${d.key}: ${d.defaultWeight} (${d.label})\n    ${d.description}`).join("\n");
@@ -221,26 +199,30 @@ async function battleSubProblem(
   provider: LLMProvider,
   constitution: Constitution,
   perspectives?: Map<string, string[]>,
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted();
   const personas = perspectives?.get(problem.title) ?? getCoreAgentsFromConstitution(constitution);
   const rubric = constitution.rubric;
 
   const solutions = await Promise.all(
     personas.map(async (persona) => {
       const prompt = buildSolutionPrompt(problem, persona, state.originalPlan, rubric);
-      const raw = await complete(provider, prompt);
+      const raw = await complete(provider, prompt, signal);
       return parseSolution(raw, persona, problem.id);
     }),
   );
   state.solutions.set(problem.id, solutions);
 
+  signal?.throwIfAborted();
   let critique = parseCritique(
-    await complete(provider, buildCritiquePrompt(problem, solutions)),
+    await complete(provider, buildCritiquePrompt(problem, solutions), signal),
     problem.id,
   );
 
   let cycleCount = 0;
   while (critique.needsMoreDebate && cycleCount < state.config.maxCritiqueCycles) {
+    signal?.throwIfAborted();
     cycleCount++;
     state.currentDepth++;
     if (state.currentDepth > state.config.maxDepth) break;
@@ -253,7 +235,7 @@ async function battleSubProblem(
     const deeper = await Promise.all(
       personas.map(async (persona) => {
         const prompt = buildSolutionPrompt(deepProblem, persona, state.originalPlan, rubric);
-        const raw = await complete(provider, prompt);
+        const raw = await complete(provider, prompt, signal);
         return parseSolution(raw, persona, problem.id);
       }),
     );
@@ -262,7 +244,7 @@ async function battleSubProblem(
     state.solutions.set(problem.id, solutions);
 
     critique = parseCritique(
-      await complete(provider, buildCritiquePrompt(problem, solutions)),
+      await complete(provider, buildCritiquePrompt(problem, solutions), signal),
       problem.id,
     );
   }
@@ -276,7 +258,9 @@ export async function runArena(
   planContent: string,
   constitution?: Constitution,
   perspectives?: Map<string, string[]>,
+  signal?: AbortSignal,
 ): Promise<ArenaResult> {
+  signal?.throwIfAborted();
   const startTime = performance.now();
   const state = createInitialState(config, planContent);
   const c = constitution ?? createDefaultConstitution();
@@ -291,21 +275,24 @@ export async function runArena(
   }
 
   for (const problem of state.subProblems) {
-    await battleSubProblem(state, problem, provider, c, perspectives);
+    signal?.throwIfAborted();
+    await battleSubProblem(state, problem, provider, c, perspectives, signal);
     if (state.currentDepth > 0) recursiveBattles++;
   }
 
+  signal?.throwIfAborted();
   const decisions = await Promise.all(
     state.subProblems.map(async (problem) => {
       const solutions = state.solutions.get(problem.id) ?? [];
       const critique = state.critiques.get(problem.id);
       if (!critique) throw new Error(`Missing critique for ${problem.id}`);
-      const raw = await complete(provider, buildSynthesizePrompt(problem, solutions, critique, c.rubric));
+      const raw = await complete(provider, buildSynthesizePrompt(problem, solutions, critique, c.rubric), signal);
       return parseSynthesize(raw, problem.id, problem.title);
     }),
   );
 
-  const synthRaw = await complete(provider, buildSynthesizeAllPrompt(state.originalPlan, decisions));
+  signal?.throwIfAborted();
+  const synthRaw = await complete(provider, buildSynthesizeAllPrompt(state.originalPlan, decisions), signal);
   const synth = parseSynthesizeAll(synthRaw);
 
   state.synthesis = { decisions, revisedPlan: synth.revisedPlan, todoMarkdown: synth.todoMarkdown };

@@ -64,11 +64,11 @@ export interface ArenaState {
 
 /** Single-method LLM provider. Arena owns all prompt construction and response parsing. */
 export interface LLMProvider {
-  complete(prompt: string, options?: { maxTokens?: number; temperature?: number }): Promise<string>;
+  complete(prompt: string, options?: { maxTokens?: number; temperature?: number; signal?: AbortSignal }): Promise<string>;
 }
 
 export interface ArenaResult {
-  state: ArenaState;
+  state: ArenaState | null;
   problemsBattled: number;
   recursiveBattles: number;
   durationMs: number;

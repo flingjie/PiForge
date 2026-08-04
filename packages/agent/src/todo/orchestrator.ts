@@ -1,4 +1,4 @@
-import { readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type {
@@ -8,6 +8,10 @@ import type {
   NodeExecutor,
   ExecutionReport,
   RoutingDecision,
+  BudgetStatus,
+  BudgetConfig,
+  TodoGraph,
+  RouteHandler,
 } from "./types.js";
 import { parseTodoGraph } from "./parser.js";
 import { updateStatus } from "./status.js";
@@ -25,6 +29,20 @@ class RetryExhaustedError extends Error {
     super(`Node "${nodeName}" failed after ${attempts} attempt(s): ${lastError.message}`);
     this.name = "RetryExhaustedError";
   }
+}
+
+/** Apply retry charges to the budget tracker for a given node. */
+function applyRetryCharges(
+  budget: BudgetStatus,
+  budgetConfig: BudgetConfig,
+  nodeId: number,
+  count: number,
+): BudgetStatus {
+  let b = budget;
+  for (let i = 0; i < count; i++) {
+    b = recordRetry(b, budgetConfig, nodeId);
+  }
+  return b;
 }
 
 async function executeWithRetry(
@@ -47,29 +65,6 @@ async function executeWithRetry(
   throw new RetryExhaustedError(nodeName, maxRetries + 1, lastError as Error);
 }
 
-function findTransitiveDependents(
-  graph: { nodes: { id: number; dependsOn: number[] }[] },
-  failedIds: Set<number>,
-): Set<number> {
-  const toSkip = new Set<number>();
-
-  function markDownstream(nodeId: number): void {
-    for (const n of graph.nodes) {
-      if (toSkip.has(n.id)) continue;
-      if (n.dependsOn.includes(nodeId)) {
-        toSkip.add(n.id);
-        markDownstream(n.id);
-      }
-    }
-  }
-
-  for (const id of failedIds) {
-    markDownstream(id);
-  }
-
-  return toSkip;
-}
-
 /** Runtime state accumulated during a run, mutated by the orchestrator loop. */
 interface RunState {
   results: TodoNodeResult[];
@@ -77,7 +72,7 @@ interface RunState {
   deactivatedIds: Set<number>;
   escalatedIds: Set<number>;
   dynamicQueue: number[];
-  budget: import("./types.js").BudgetStatus;
+  budget: BudgetStatus;
   stopped: boolean;
   stopReason: string | null;
 }
@@ -108,14 +103,13 @@ async function executeSingleNode(
       retryCount,
     };
 
-    // Update budget: normal execution retries
+    // Update budget: retries tracked by recordRetry; check time here for routing visibility
     if (config.budget) {
       state.budget = updateB(state.budget, result.durationMs, 0);
-      for (let i = 0; i < retryCount; i++) {
-        state.budget = recordRetry(state.budget, config.budget, node.id);
+      state.budget = applyRetryCharges(state.budget, config.budget, node.id, retryCount);
+      if (state.budget.elapsedMs > config.budget.maxTimeMs) {
+        state.budget = { ...state.budget, exceeded: "time" };
       }
-      const exceeded = checkBudget(state.budget, config.budget);
-      if (exceeded !== "none") state.budget = { ...state.budget, exceeded };
     }
 
     return result;
@@ -138,11 +132,10 @@ async function executeSingleNode(
 
     if (config.budget) {
       state.budget = updateB(state.budget, result.durationMs, 0);
-      for (let i = 0; i <= config.maxRetries; i++) {
-        state.budget = recordRetry(state.budget, config.budget, node.id);
+      state.budget = applyRetryCharges(state.budget, config.budget, node.id, retryCount);
+      if (state.budget.elapsedMs > config.budget.maxTimeMs) {
+        state.budget = { ...state.budget, exceeded: "time" };
       }
-      const exceeded = checkBudget(state.budget, config.budget);
-      if (exceeded !== "none") state.budget = { ...state.budget, exceeded };
     }
 
     return result;
@@ -184,9 +177,7 @@ async function applyRoutingDecision(
         };
 
         state.budget = updateB(state.budget, retryResult.durationMs, 0);
-        for (let i = 0; i < (decision.extraAttempts ?? 1); i++) {
-          state.budget = recordRetry(state.budget, config.budget!, node.id);
-        }
+        state.budget = applyRetryCharges(state.budget, config.budget!, node.id, decision.extraAttempts ?? 1);
 
         updateStatus(config.todoPath, node.id, "completed");
         return retryResult;
@@ -228,14 +219,36 @@ async function applyRoutingDecision(
   }
 }
 
+/** Format a human-readable budget exceeded message with current vs max values. */
+function formatBudgetExceeded(
+  budget: BudgetStatus,
+  config: BudgetConfig,
+): string {
+  switch (budget.exceeded) {
+    case "time":
+      return `Budget exceeded: time (${budget.elapsedMs}ms used, ${config.maxTimeMs}ms limit)`;
+    case "tokens":
+      return `Budget exceeded: tokens (${budget.tokensUsed} used, ${config.maxTokens} limit)`;
+    case "retries": {
+      const nodes = Object.entries(budget.nodeRetries)
+        .filter(([, count]) => count > config.maxRetriesPerNode)
+        .map(([id, count]) => `node ${id}: ${count}/${config.maxRetriesPerNode}`);
+      return `Budget exceeded: retries (per-node limit ${config.maxRetriesPerNode}). Exceeded: ${nodes.join(", ")}`;
+    }
+    default:
+      return "Budget exceeded";
+  }
+}
+
 /** Process a batch of node IDs in parallel. Handles execution, routing, and status updates. */
 async function runNodeBatch(
   nodeIds: number[],
-  graph: import("./types.js").TodoGraph,
+  graph: TodoGraph,
   config: TodoConfig,
   executor: NodeExecutor,
   state: RunState,
   hasBudget: boolean,
+  nodeMap: Map<number, TodoNode>,
 ): Promise<void> {
   if (state.stopped) return;
 
@@ -245,7 +258,7 @@ async function runNodeBatch(
     if (exceeded !== "none") {
       state.budget = { ...state.budget, exceeded };
       state.stopped = true;
-      state.stopReason = `Budget exceeded: ${exceeded}`;
+      state.stopReason = formatBudgetExceeded(state.budget, config.budget!);
       return;
     }
   }
@@ -254,7 +267,7 @@ async function runNodeBatch(
     async (nodeId): Promise<void> => {
       if (state.stopped) return;
 
-      const node = graph.nodes.find((n) => n.id === nodeId);
+      const node = nodeMap.get(nodeId);
       if (!node) return;
 
       // Execute
@@ -304,7 +317,7 @@ export async function runOrchestrator(
   config: TodoConfig,
   executor: NodeExecutor,
 ): Promise<ExecutionReport> {
-  const content = readFileSync(config.todoPath, "utf-8");
+  const content = await readFile(config.todoPath, "utf-8");
   const graph = parseTodoGraph(content);
 
   // Dry-run: parse and validate, execute nothing.
@@ -338,7 +351,7 @@ export async function runOrchestrator(
     dynamicQueue: [],
     budget: config.budget
       ? createBudget(config.budget)
-      : { elapsedMs: 0, tokensUsed: 0, nodeRetries: new Map(), exceeded: "none" },
+      : { elapsedMs: 0, tokensUsed: 0, nodeRetries: {}, exceeded: "none" },
     stopped: false,
     stopReason: null,
   };
@@ -346,9 +359,36 @@ export async function runOrchestrator(
   const startTime = Date.now();
   const hasBudget = config.budget !== undefined;
 
+  // Build O(1) lookup indices
+  const nodeMap = new Map(graph.nodes.map((n) => [n.id, n]));
+  const reverseDeps = new Map<number, number[]>();
+  for (const n of graph.nodes) {
+    for (const depId of n.dependsOn) {
+      const list = reverseDeps.get(depId);
+      if (list) list.push(n.id);
+      else reverseDeps.set(depId, [n.id]);
+    }
+  }
+
+  // BFS from failed nodes to mark downstream skips using the reverse dep index
+  function findDownstreamToSkip(failedIds: Set<number>): Set<number> {
+    const toSkip = new Set<number>();
+    const queue = [...failedIds];
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      for (const dep of reverseDeps.get(id) ?? []) {
+        if (!toSkip.has(dep)) {
+          toSkip.add(dep);
+          queue.push(dep);
+        }
+      }
+    }
+    return toSkip;
+  }
+
   // ---- Process static groups ----
   for (const group of graph.groups) {
-    const toSkip = findTransitiveDependents(graph, state.failedIds);
+    const toSkip = findDownstreamToSkip(state.failedIds);
     const activeNodes = group.filter(
       (id) => !toSkip.has(id) && !state.deactivatedIds.has(id),
     );
@@ -361,7 +401,7 @@ export async function runOrchestrator(
       updateStatus(config.todoPath, id, "skipped");
       state.results.push({
         nodeId: id,
-        nodeName: graph.nodes.find((n) => n.id === id)?.name ?? `node-${id}`,
+        nodeName: nodeMap.get(id)?.name ?? `node-${id}`,
         status: "skipped",
         output: null,
         durationMs: 0,
@@ -372,7 +412,7 @@ export async function runOrchestrator(
 
     if (activeNodes.length === 0) continue;
 
-    await runNodeBatch(activeNodes, graph, config, executor, state, hasBudget);
+    await runNodeBatch(activeNodes, graph, config, executor, state, hasBudget, nodeMap);
     if (state.stopped) break;
   }
 
@@ -380,7 +420,7 @@ export async function runOrchestrator(
   if (state.dynamicQueue.length > 0) {
     const seen = new Set(state.results.map((r) => r.nodeId).concat([...state.failedIds]));
     const newNodes = state.dynamicQueue.filter((id) => !seen.has(id));
-    await runNodeBatch(newNodes, graph, config, executor, state, hasBudget);
+    await runNodeBatch(newNodes, graph, config, executor, state, hasBudget, nodeMap);
   }
 
   return generateReport(state.results, startTime, {
@@ -396,12 +436,12 @@ export async function runOrchestrator(
 export async function runOrchestratorFromMarkdown(
   todoMarkdown: string,
   executor: NodeExecutor,
-  options?: { maxRetries?: number; budget?: import("./types.js").BudgetConfig; routeHandler?: import("./types.js").RouteHandler },
+  options?: { maxRetries?: number; budget?: BudgetConfig; routeHandler?: RouteHandler },
 ): Promise<ExecutionReport> {
-  const dir = mkdtempSync(join(tmpdir(), "piforge-todo-"));
+  const dir = await mkdtemp(join(tmpdir(), "piforge-todo-"));
   const todoPath = join(dir, "todo.md");
   try {
-    writeFileSync(todoPath, todoMarkdown, "utf-8");
+    await writeFile(todoPath, todoMarkdown, "utf-8");
     return await runOrchestrator(
       {
         maxRetries: options?.maxRetries ?? 0,
@@ -412,6 +452,6 @@ export async function runOrchestratorFromMarkdown(
       executor,
     );
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true });
   }
 }

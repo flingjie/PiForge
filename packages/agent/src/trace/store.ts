@@ -7,11 +7,14 @@ function ensureDir(dir: string): void {
   mkdirSync(dir, { recursive: true });
 }
 
-function safeWrite(callback: () => void): void {
+function safeWrite(callback: () => void, context: string): void {
   try {
     callback();
   } catch (err) {
-    console.error("[trace] Failed to write trace file:", err instanceof Error ? err.message : String(err));
+    console.error(
+      `[trace] Failed to write ${context}:`,
+      err instanceof Error ? err.message : String(err),
+    );
   }
 }
 
@@ -46,7 +49,7 @@ export function savePipelineIndex(
     ].join("\n");
 
     writeFileSync(join(outputDir, `pipeline-${pipelineId}.md`), content, "utf-8");
-  });
+  }, `pipeline index for ${pipelineId}`);
 }
 
 export function saveArenaTrace(
@@ -58,7 +61,7 @@ export function saveArenaTrace(
 ): void {
   safeWrite(() => {
     ensureDir(outputDir);
-    const { state } = result.arenaResult;
+    const state = result.arenaResult.state;
 
     const planLink = planPath
       ? `[${planPath.split("/").pop()!}](../../${planPath})`
@@ -69,14 +72,14 @@ export function saveArenaTrace(
       "",
       `**Pipeline:** [pipeline-${pipelineId}](pipeline-${pipelineId}.md)`,
       `**Plan:** ${planLink}`,
-      `**Status:** ${state.status}`,
+      `**Status:** ${state?.status ?? "not run"}`,
       `**Duration:** ${(result.arenaResult.durationMs / 1000).toFixed(1)}s`,
       `**Problems battled:** ${result.arenaResult.problemsBattled} (recursive: ${result.arenaResult.recursiveBattles})`,
       "",
     ];
 
-    if (!state.synthesis) {
-      lines.push("(No synthesis result)");
+    if (!state?.synthesis) {
+      lines.push(state ? "(No synthesis result)" : "(Arena was not run)");
       writeFileSync(join(outputDir, `arena-${pipelineId}.md`), lines.join("\n"), "utf-8");
       return;
     }
@@ -123,7 +126,7 @@ export function saveArenaTrace(
     }
 
     writeFileSync(join(outputDir, `arena-${pipelineId}.md`), lines.join("\n"), "utf-8");
-  });
+  }, `arena trace for ${pipelineId}`);
 }
 
 export function saveTodoTrace(
@@ -156,7 +159,7 @@ export function saveTodoTrace(
     ];
 
     writeFileSync(join(outputDir, `todo-${pipelineId}.md`), lines.join("\n"), "utf-8");
-  });
+  }, `todo trace for ${pipelineId}`);
 }
 
 export function appendToIndex(
@@ -188,5 +191,5 @@ export function appendToIndex(
       const existing = readFileSync(indexPath, "utf-8");
       writeFileSync(indexPath, existing.trimEnd() + "\n" + row + "\n", "utf-8");
     }
-  });
+  }, `index append for ${pipelineId}`);
 }

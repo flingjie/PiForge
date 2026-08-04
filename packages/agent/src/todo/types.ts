@@ -88,7 +88,7 @@ export interface BudgetConfig {
 export interface BudgetStatus {
   elapsedMs: number;
   tokensUsed: number;
-  nodeRetries: Map<number, number>;
+  nodeRetries: Record<number, number>;
   exceeded: "none" | "time" | "tokens" | "retries";
 }
 

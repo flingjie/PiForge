@@ -1,29 +1,7 @@
 import type { LLMProvider, PerspectiveSuggestion, PerspectivesResult, SubProblem } from "./types.js";
 import type { Constitution } from "../constitution/types.js";
 import { getCoreAgentsFromConstitution } from "./agent-pool.js";
-
-// ---- JSON helpers ----
-
-function extractJSON(raw: string): string {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start === -1 || end === -1 || start >= end) {
-    throw new Error(`No JSON object found in response: ${raw.slice(0, 200)}`);
-  }
-  return raw.slice(start, end + 1);
-}
-
-async function complete(provider: LLMProvider, prompt: string): Promise<string> {
-  let response = await provider.complete(prompt);
-  try {
-    JSON.parse(extractJSON(response));
-    return response;
-  } catch {
-    return provider.complete(
-      prompt + "\n\nYour previous response was not valid JSON. Return ONLY a valid JSON object.",
-    );
-  }
-}
+import { extractJSON, complete } from "./json-utils.js";
 
 // ---- Prompt ----
 
@@ -70,9 +48,18 @@ Return ONLY valid JSON:
 }`;
 }
 
-function parsePerspectivesResponse(raw: string): PerspectiveSuggestion[][] {
+function parsePerspectivesResponse(
+  raw: string,
+  decisionPoints: SubProblem[],
+): Array<{ decision: string; perspectives: PerspectiveSuggestion[] }> {
   const o = JSON.parse(extractJSON(raw)) as PerspectivesResult;
-  return (o.suggestions ?? []).map((s) => s.perspectives ?? []);
+  const suggestionMap = new Map(
+    (o.suggestions ?? []).map((s) => [s.decision, s.perspectives ?? []]),
+  );
+  return decisionPoints.map((d) => ({
+    decision: d.title,
+    perspectives: suggestionMap.get(d.title) ?? [],
+  }));
 }
 
 // ---- Public API ----
@@ -81,19 +68,17 @@ export async function suggestPerspectives(
   provider: LLMProvider,
   decisionPoints: SubProblem[],
   constitution: Constitution,
+  signal?: AbortSignal,
 ): Promise<Array<{ decision: string; perspectives: PerspectiveSuggestion[] }>> {
   if (decisionPoints.length === 0) return [];
+
+  signal?.throwIfAborted();
 
   const allPersonas = [
     ...new Set(constitution.agentPool.map((e) => e.persona)),
   ];
 
   const prompt = buildPerspectivesPrompt(decisionPoints, allPersonas);
-  const raw = await complete(provider, prompt);
-  const perspectives = parsePerspectivesResponse(raw);
-
-  return decisionPoints.map((d, i) => ({
-    decision: d.title,
-    perspectives: perspectives[i] ?? [],
-  }));
+  const raw = await complete(provider, prompt, signal);
+  return parsePerspectivesResponse(raw, decisionPoints);
 }

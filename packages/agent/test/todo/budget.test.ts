@@ -13,7 +13,7 @@ describe("createBudget", () => {
     const budget = createBudget(config);
     expect(budget.elapsedMs).toBe(0);
     expect(budget.tokensUsed).toBe(0);
-    expect(budget.nodeRetries.size).toBe(0);
+    expect(Object.keys(budget.nodeRetries).length).toBe(0);
     expect(budget.exceeded).toBe("none");
   });
 });
@@ -38,11 +38,11 @@ describe("recordRetry", () => {
   it("increments retry count for a node", () => {
     const budget = createBudget(config);
     const after1 = recordRetry(budget, config, 1);
-    expect(after1.nodeRetries.get(1)).toBe(1);
+    expect(after1.nodeRetries[1]).toBe(1);
     expect(after1.exceeded).toBe("none");
 
     const after2 = recordRetry(after1, config, 1);
-    expect(after2.nodeRetries.get(1)).toBe(2);
+    expect(after2.nodeRetries[1]).toBe(2);
     expect(after2.exceeded).toBe("none");
   });
 
@@ -55,7 +55,7 @@ describe("recordRetry", () => {
       current = recordRetry(current, config, 1);
     }
 
-    expect(current.nodeRetries.get(1)).toBe(4);
+    expect(current.nodeRetries[1]).toBe(4);
     expect(current.exceeded).toBe("retries");
   });
 
@@ -63,8 +63,8 @@ describe("recordRetry", () => {
     const budget = createBudget(config);
     const after1 = recordRetry(budget, config, 1);
     const after2 = recordRetry(after1, config, 2);
-    expect(after2.nodeRetries.get(1)).toBe(1);
-    expect(after2.nodeRetries.get(2)).toBe(1);
+    expect(after2.nodeRetries[1]).toBe(1);
+    expect(after2.nodeRetries[2]).toBe(1);
   });
 });
 

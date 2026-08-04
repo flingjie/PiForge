@@ -5,7 +5,7 @@ export function createBudget(config: BudgetConfig): BudgetStatus {
   return {
     elapsedMs: 0,
     tokensUsed: 0,
-    nodeRetries: new Map(),
+    nodeRetries: {},
     exceeded: "none",
   };
 }
@@ -16,14 +16,10 @@ export function updateBudget(
   deltaMs: number,
   deltaTokens: number,
 ): BudgetStatus {
-  const elapsedMs = status.elapsedMs + deltaMs;
-  const tokensUsed = status.tokensUsed + deltaTokens;
-
   return {
     ...status,
-    elapsedMs,
-    tokensUsed,
-    nodeRetries: new Map(status.nodeRetries),
+    elapsedMs: status.elapsedMs + deltaMs,
+    tokensUsed: status.tokensUsed + deltaTokens,
   };
 }
 
@@ -33,14 +29,16 @@ export function recordRetry(
   config: BudgetConfig,
   nodeId: number,
 ): BudgetStatus {
-  const count = (status.nodeRetries.get(nodeId) ?? 0) + 1;
-  const nodeRetries = new Map(status.nodeRetries);
-  nodeRetries.set(nodeId, count);
+  const count = (status.nodeRetries[nodeId] ?? 0) + 1;
 
   const exceeded =
     count > config.maxRetriesPerNode ? "retries" as const : status.exceeded;
 
-  return { ...status, nodeRetries, exceeded };
+  return {
+    ...status,
+    nodeRetries: { ...status.nodeRetries, [nodeId]: count },
+    exceeded,
+  };
 }
 
 /** Check all budget limits. Returns the first exceeded category, or "none". */
