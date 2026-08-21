@@ -10,7 +10,7 @@ When Phase 3 dispatches implementer subagents via `subagent-driven-development`,
 
 This spec adds the missing ex-post audit, adapted from dzhng's `audit-choices` skill. The guiding principle: **review decisions, not diffs** — and do it *separately* from the implementer to prevent self-justification.
 
-**Goal:** After a non-trivial implementation, a separate audit agent surfaces every decision the implementer made in the spec's silence, records it to a persistent ledger sorted by lowest confidence first, and hands `needs-user` items back to the human for push-back.
+**Goal:** After a non-trivial implementation, a separate audit agent surfaces every decision the implementer made in the spec's silence, records it to a persistent ledger, presented sorted by lowest confidence first, and hands `needs-user` items back to the human for push-back.
 
 ## Confirmed Constraints
 
@@ -27,7 +27,7 @@ Three files, zero new skills, zero code logic.
 
 | File | Action | Content |
 |------|--------|---------|
-| `state/choices.md` | new | Ledger body. Header carries a self-describing entry template; entries appended below, sorted lowest-confidence first |
+| `state/choices.md` | new | Ledger body. Header carries a self-describing entry template; entries appended chronologically below; sorted lowest-confidence first at presentation time |
 | `docs/audit-choices.md` | new | Audit runbook: agent persona, input sources, the full prompt fed to the auditor, gate rules |
 | `CLAUDE.md` | edit | Phase 4 (Close) gains an `audit` step before `finish`, one line pointing to `docs/audit-choices.md` |
 
@@ -40,7 +40,7 @@ implementation complete (non-trivial change)
   → Phase 4 audit gate
   → dispatch 1 audit agent, persona `maintain` (≠ implementer `speed`)
   → inputs: git diff + commit + records.jsonl + plan file (if any)
-  → output: append to state/choices.md, sorted confidence ascending (low first)
+  → output: append to state/choices.md chronologically; present sorted confidence ascending (low first)
   → Close report lists needs-user entries; sound entries carry a promote suggestion
   → human pushes back only 3-5 items
 ```
@@ -64,14 +64,14 @@ implementation complete (non-trivial change)
 - **If needs-user**: <reversible temporary choice + how to roll back>
 ```
 
-Sorting rule: **confidence ascending, low first**; within equal confidence, group by verdict — `needs-user` first, `unsound` second, `sound` last.
+Presentation sorting rule: **confidence ascending, low first**; within equal confidence, group by verdict — `needs-user` first, `unsound` second, `sound` last.
 
 ## Error Handling & Boundaries
 
 - **Empty ledger**: a non-trivial feature yielding 0 entries means the audit was not deep enough. Flag it explicitly in the Close report; never treat as "nothing to see".
 - **Unreadable diff / empty records.jsonl**: auditor degrades to reading commit + plan only; still records, but appends "input incomplete, confidence downgraded".
 - **Clustering signal**: ≥3 homogeneous decisions → upstream spec is too vague; recommend re-slicing, not re-auditing.
-- **Banking**: `sound` entries, once human-approved, promote — into `constitution.md` as a new principle (or a new "Banked Decisions" section), isomorphic to the existing `bootstrap.json` promotion loop. `needs-user` entries carry a written rollback path.
+- **Banking**: `sound` entries, once human-approved, promote — into `state/constitution.md` as a new principle (or a new "Banked Decisions" section), isomorphic to the existing `bootstrap.json` promotion loop. `needs-user` entries carry a written rollback path.
 
 ## Out of Scope
 

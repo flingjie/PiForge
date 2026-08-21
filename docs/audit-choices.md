@@ -48,6 +48,7 @@ Read the diff, commits, plan, and records. For each implicit decision:
    - `needs-user` — a genuine fork requiring human call; give a reversible
      temporary choice and a rollback path.
 4. Confidence in whether the human will agree: `low` / `medium` / `high`.
+5. If the diff or records are incomplete (empty `records.jsonl`, unreadable diff), append the note `input incomplete, confidence downgraded` to the affected entries.
 
 Do NOT modify code. You only record.
 
