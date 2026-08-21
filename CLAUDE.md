@@ -137,8 +137,9 @@ For non-trivial tasks, follow this phased pipeline. Each phase has clear entry/e
 - **Trigger:** Implementation complete, all tests pass.
 - **Steps:**
   4a. **Verify** — Run end-to-end verification. Confirm no regressions.
-  4b. **Finish** — Use `finishing-a-development-branch` to decide: merge, PR, or keep as branch.
-  4c. **Reflect** — Consider running `/reflect` to extract insights from the completed work.
+  4b. **Audit** — For non-trivial changes, dispatch a separate `maintain`-persona audit agent (never the implementer) to record silent decisions to `state/choices.md`. See `docs/audit-choices.md`. Skip for trivial changes.
+  4c. **Finish** — Use `finishing-a-development-branch` to decide: merge, PR, or keep as branch.
+  4d. **Reflect** — Consider running `/reflect` to extract insights from the completed work.
 - **Exit:** Code merged or branch documented with status.
 
 ## Agent Behavior
